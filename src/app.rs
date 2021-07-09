@@ -51,12 +51,12 @@ fn intersects(a: (Point, Point), b: (Point, Point)) -> bool {
     let td = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
     if td != 0 {
         let t = tq as f32 / td as f32;
-        if 0.0 < t && t <= 1.0 {
+        if 0.0 < t && t < 1.0 {
             let uq = (x2 - x1) * (y1 - y3) - (y2 - y1) * (x1 - x3);
             let ud = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
             if ud != 0 {
                 let u = uq as f32 / ud as f32;
-                if 0.0 < u && u <= 1.0 {
+                if 0.0 < u && u < 1.0 {
                     return true;
                 }
             }
@@ -73,6 +73,10 @@ fn inside(poly: &[Point], p: Point) -> bool {
     let mut j = poly.len() - 1;
     let mut c = false;
     while i < poly.len() {
+	// If the point is in the polygon, then it is inside
+	if p == poly[i] {
+	    return true;
+	}
         if (((poly[i][1] <= p[1]) && (p[1] < poly[j][1]))
             || ((poly[j][1] <= p[1]) && (p[1] < poly[i][1])))
             && (p[0]
