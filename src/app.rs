@@ -42,6 +42,51 @@ fn read_problem_from_file<P: AsRef<Path>>(path: P) -> Result<Problem, Box<dyn Er
     Ok(u)
 }
 
+fn intersects(a: (Point, Point), b: (Point, Point)) -> bool {
+    let [x1, y1] = a.0;
+    let [x2, y2] = a.1;
+    let [x3, y3] = b.0;
+    let [x4, y4] = b.1;
+    let tq = (x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4);
+    let td = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
+    if td != 0 {
+        let t = tq as f32 / td as f32;
+        if 0.0 < t && t <= 1.0 {
+            let uq = (x2 - x1) * (y1 - y3) - (y2 - y1) * (x1 - x3);
+            let ud = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
+            if ud != 0 {
+                let u = uq as f32 / ud as f32;
+                if 0.0 < u && u <= 1.0 {
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+
+fn inside(poly: &[Point], p: Point) -> bool {
+    if poly.len() == 0 {
+        return false;
+    }
+    let mut i = 0;
+    let mut j = poly.len() - 1;
+    let mut c = false;
+    while i < poly.len() {
+        if (((poly[i][1] <= p[1]) && (p[1] < poly[j][1]))
+            || ((poly[j][1] <= p[1]) && (p[1] < poly[i][1])))
+            && (p[0]
+                < (poly[j][0] - poly[i][0]) * (p[1] - poly[i][1]) / (poly[j][1] - poly[i][1])
+                    + poly[i][0])
+        {
+            c = !c;
+        }
+        j = i;
+        i += 1;
+    }
+    return c;
+}
+
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
 #[cfg_attr(feature = "persistence", derive(serde::Deserialize, serde::Serialize))]
 #[cfg_attr(feature = "persistence", serde(default))] // if we add new fields, give them default values when deserializing old state
@@ -133,7 +178,9 @@ impl epi::App for TemplateApp {
 
                 let mut shapes = vec![];
                 let hole_stroke = egui::Stroke::new(2.0, egui::Color32::LIGHT_BLUE);
-                let pose_stroke = egui::Stroke::new(2.0, egui::Color32::RED);
+                let pose_stroke = egui::Stroke::new(2.0, egui::Color32::GREEN);
+                let intersect_stroke = egui::Stroke::new(2.0, egui::Color32::RED);
+                let outside_stroke = egui::Stroke::new(2.0, egui::Color32::YELLOW);
                 let grid_stroke = egui::Stroke::new(1.0, egui::Color32::LIGHT_GRAY);
                 if let Some(problem) = problem {
                     // Transform so hole fits area
@@ -184,11 +231,26 @@ impl epi::App for TemplateApp {
                     shapes.push(egui::Shape::closed_line(points, hole_stroke));
                     // Draw pose
                     for edge in &problem.figure.edges {
-                        let points = vec![
-                            to_screen * to_pos2(problem.figure.vertices[edge.0]),
-                            to_screen * to_pos2(problem.figure.vertices[edge.1]),
-                        ];
-                        shapes.push(egui::Shape::line(points, pose_stroke));
+                        let p1 = problem.figure.vertices[edge.0];
+                        let p2 = problem.figure.vertices[edge.1];
+                        let points = vec![to_screen * to_pos2(p1), to_screen * to_pos2(p2)];
+                        let mut stroke = if !inside(&problem.hole, p1) || !inside(&problem.hole, p2)
+                        {
+                            outside_stroke
+                        } else {
+                            pose_stroke
+                        };
+                        let mut i = 0;
+                        let l = problem.hole.len();
+                        while i < l {
+                            let j = (i + 1) % l;
+                            if intersects((p1, p2), (problem.hole[i], problem.hole[j])) {
+                                stroke = intersect_stroke;
+                                break;
+                            }
+                            i += 1;
+                        }
+                        shapes.push(egui::Shape::line(points, stroke));
                     }
                 }
                 ui.painter().extend(shapes);
