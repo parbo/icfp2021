@@ -2,7 +2,7 @@ use eframe::{egui, epi};
 //extern crate env_file;
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::fs::File;
 use std::io::BufReader;
@@ -44,10 +44,7 @@ fn read_problem_from_file<P: AsRef<Path>>(path: P) -> Result<Problem, Box<dyn Er
 
 fn write_solution_to_file<P: AsRef<Path>>(path: P, verts: &[Point]) -> Result<(), Box<dyn Error>> {
     let file = File::create(path)?;
-    let vertices: Vec<_> = verts
-        .into_iter()
-        .map(|p| [p.x as i32, p.y as i32])
-        .collect();
+    let vertices: Vec<_> = verts.iter().map(|p| [p.x as i32, p.y as i32]).collect();
     let p = Pose { vertices };
     serde_json::to_writer(&file, &p)?;
     return Ok(());
@@ -104,12 +101,17 @@ fn inside(poly: &[egui::Pos2], p: egui::Pos2) -> bool {
 
 fn place_vertice(
     problem: &Problem,
-    verts: Vec<Point>,
+    memo: &mut HashMap<Vec<[i32; 2]>, Option<Vec<[i32; 2]>>>,
+    verts: Vec<[i32; 2]>,
     min_x: i32,
     max_x: i32,
     min_y: i32,
     max_y: i32,
-) -> Option<Vec<Point>> {
+) -> Option<Vec<[i32; 2]>> {
+    if let Some(p) = memo.get(&verts) {
+        println!("memoized");
+        return p.clone();
+    }
     let ix = verts.len();
     if ix == problem.figure.vertices.len() {
         for (a, b) in &problem.figure.edges {
@@ -123,7 +125,9 @@ fn place_vertice(
             println!("{}, {}, {}, {}", d, dd, eps, problem.epsilon);
         }
         println!("all successfully placed! {:?}", verts);
-        return Some(verts);
+        let v = verts.clone();
+        memo.insert(verts, Some(v.clone()));
+        return Some(v);
     }
     let hole = problem.hole.clone();
     for x in min_x..=max_x {
@@ -145,8 +149,24 @@ fn place_vertice(
                     let p1 = problem.figure.vertices[*a];
                     let p2 = problem.figure.vertices[*b];
                     let d = (p1[0] - p2[0]) * (p1[0] - p2[0]) + (p1[1] - p2[1]) * (p1[1] - p2[1]);
-                    let pp1 = if *a == ix { p } else { verts[*a] };
-                    let pp2 = if *b == ix { p } else { verts[*b] };
+                    let pp1 = if *a == ix {
+                        p
+                    } else {
+                        let [x, y] = verts[*a];
+                        Point {
+                            x: x as f32,
+                            y: y as f32,
+                        }
+                    };
+                    let pp2 = if *b == ix {
+                        p
+                    } else {
+                        let [x, y] = verts[*b];
+                        Point {
+                            x: x as f32,
+                            y: y as f32,
+                        }
+                    };
                     let dd = (pp1[0] - pp2[0]) * (pp1[0] - pp2[0])
                         + (pp1[1] - pp2[1]) * (pp1[1] - pp2[1]);
                     let eps = 1000000.0 * ((dd as f32 / d as f32) - 1.0).abs();
@@ -183,23 +203,26 @@ fn place_vertice(
             }
             if ok {
                 let mut v = verts.clone();
-                v.push(p);
-                if let Some(res) = place_vertice(problem, v, min_x, max_x, min_y, max_y) {
+                v.push([p.x as i32, p.y as i32]);
+                if let Some(res) = place_vertice(problem, memo, v, min_x, max_x, min_y, max_y) {
+                    memo.insert(verts, Some(res.clone()));
                     return Some(res);
                 }
             }
         }
     }
+    memo.insert(verts, None);
     return None;
 }
 
-fn solve(problem: &Problem) -> Option<Vec<Point>> {
+fn solve(problem: &Problem) -> Option<Vec<[i32; 2]>> {
     let min_x = problem.hole.iter().map(|x| x[0] as i32).min().unwrap_or(0);
     let max_x = problem.hole.iter().map(|x| x[0] as i32).max().unwrap_or(0);
     let min_y = problem.hole.iter().map(|x| x[1] as i32).min().unwrap_or(0);
     let max_y = problem.hole.iter().map(|x| x[1] as i32).max().unwrap_or(0);
     let v = vec![];
-    place_vertice(problem, v, min_x, max_x, min_y, max_y)
+    let mut m = HashMap::new();
+    place_vertice(problem, &mut m, v, min_x, max_x, min_y, max_y)
 }
 
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
@@ -294,7 +317,13 @@ impl epi::App for TemplateApp {
                 ui.set_enabled(problem.is_some());
                 if ui.button("Solve").clicked() {
                     if let Some(res) = solve(problem.as_ref().unwrap()) {
-                        *pose = res;
+                        *pose = res
+                            .into_iter()
+                            .map(|p| Point {
+                                x: p[0] as f32,
+                                y: p[1] as f32,
+                            })
+                            .collect();
                     }
                 }
                 if ui.button("Save").clicked() {
