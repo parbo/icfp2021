@@ -2,6 +2,7 @@ use eframe::{egui, epi};
 //extern crate env_file;
 
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::error::Error;
 use std::fs::File;
 use std::io::BufReader;
@@ -29,7 +30,6 @@ pub struct Pose {
     vertices: Vec<[i32; 2]>,
 }
 
-
 fn read_problem_from_file<P: AsRef<Path>>(path: P) -> Result<Problem, Box<dyn Error>> {
     // Open the file in read-only mode with buffer.
     let file = File::open(path)?;
@@ -44,7 +44,10 @@ fn read_problem_from_file<P: AsRef<Path>>(path: P) -> Result<Problem, Box<dyn Er
 
 fn write_solution_to_file<P: AsRef<Path>>(path: P, verts: &[Point]) -> Result<(), Box<dyn Error>> {
     let file = File::create(path)?;
-    let vertices : Vec<_> = verts.into_iter().map(|p| [p.x as i32, p.y as i32]).collect();
+    let vertices: Vec<_> = verts
+        .into_iter()
+        .map(|p| [p.x as i32, p.y as i32])
+        .collect();
     let p = Pose { vertices };
     serde_json::to_writer(&file, &p)?;
     return Ok(());
@@ -115,11 +118,10 @@ fn place_vertice(
             let d = (p1[0] - p2[0]) * (p1[0] - p2[0]) + (p1[1] - p2[1]) * (p1[1] - p2[1]);
             let pp1 = verts[*a];
             let pp2 = verts[*b];
-            let dd = (pp1[0] - pp2[0]) * (pp1[0] - pp2[0])
-                + (pp1[1] - pp2[1]) * (pp1[1] - pp2[1]);
+            let dd = (pp1[0] - pp2[0]) * (pp1[0] - pp2[0]) + (pp1[1] - pp2[1]) * (pp1[1] - pp2[1]);
             let eps = 1000000.0 * ((d as f32 / dd as f32) - 1.0).abs();
-	    println!("{}, {}, {}, {}", d, dd, eps, problem.epsilon);
-	}
+            println!("{}, {}, {}, {}", d, dd, eps, problem.epsilon);
+        }
         println!("all successfully placed! {:?}", verts);
         return Some(verts);
     }
@@ -138,7 +140,7 @@ fn place_vertice(
             // Are all placed edges within the constraint?
             let mut ok = true;
             for (a, b) in &problem.figure.edges {
-		// Only check the new edges enabled by this point
+                // Only check the new edges enabled by this point
                 if (*a == ix || *b == ix) && *a <= ix && *b <= ix {
                     let p1 = problem.figure.vertices[*a];
                     let p2 = problem.figure.vertices[*b];
@@ -147,7 +149,7 @@ fn place_vertice(
                     let pp2 = if *b == ix { p } else { verts[*b] };
                     let dd = (pp1[0] - pp2[0]) * (pp1[0] - pp2[0])
                         + (pp1[1] - pp2[1]) * (pp1[1] - pp2[1]);
-                    let eps = 1000000.0 * ((d as f32 / dd as f32) - 1.0).abs();
+                    let eps = 1000000.0 * ((dd as f32 / d as f32) - 1.0).abs();
                     if eps as i32 > problem.epsilon {
                         ok = false;
                         break;
@@ -163,7 +165,7 @@ fn place_vertice(
                         }
                         i += 1;
                     }
-		    // check that the whole line is inside (there must be a fast and correct way to do this)
+                    // check that the whole line is inside (there must be a fast and correct way to do this)
                     // This is not really 100% correct
                     for i in 0..1000 {
                         let dir = [pp2[0] - pp1[0], pp2[1] - pp1[1]];
@@ -212,6 +214,9 @@ pub struct TemplateApp {
 
     #[cfg_attr(feature = "persistence", serde(skip))]
     pose: Vec<Point>,
+
+    #[cfg_attr(feature = "persistence", serde(skip))]
+    selected: HashSet<usize>,
 }
 
 impl Default for TemplateApp {
@@ -222,6 +227,7 @@ impl Default for TemplateApp {
             grid: false,
             problem: None,
             pose: vec![],
+            selected: HashSet::new(),
         }
     }
 }
@@ -256,6 +262,7 @@ impl epi::App for TemplateApp {
             grid,
             problem,
             pose,
+            selected,
         } = self;
 
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
@@ -290,13 +297,44 @@ impl epi::App for TemplateApp {
                         *pose = res;
                     }
                 }
-		if ui.button("save").clicked() {
-		    let out_filename = filename.to_owned() + ".solution.json";
+                if ui.button("Save").clicked() {
+                    let out_filename = filename.to_owned() + ".solution.json";
                     if let Ok(_) = write_solution_to_file(&out_filename, &pose) {
-			println!("saved solution!");
+                        println!("saved solution!");
                     }
-		}
+                }
             });
+            if let Some(p) = problem {
+                if ui.button("Select All").clicked() {
+                    *selected = HashSet::new();
+                }
+                egui::ScrollArea::auto_sized().show(ui, |ui| {
+                    for i in 0..p.figure.edges.len() {
+                        let checked = selected.contains(&i);
+                        let (a, b) = p.figure.edges[i];
+                        let p1 = p.figure.vertices[a];
+                        let p2 = p.figure.vertices[b];
+                        let d =
+                            (p1[0] - p2[0]) * (p1[0] - p2[0]) + (p1[1] - p2[1]) * (p1[1] - p2[1]);
+                        let pp1 = pose[a];
+                        let pp2 = pose[b];
+                        let dd = (pp1[0] - pp2[0]) * (pp1[0] - pp2[0])
+                            + (pp1[1] - pp2[1]) * (pp1[1] - pp2[1]);
+                        let eps = 1000000.0 * ((dd as f32 / d as f32) - 1.0).abs();
+                        let label = format!(
+                            "{:?}, {}, {}, {}, {}",
+                            p.figure.edges[i], d, dd, eps, p.epsilon
+                        );
+                        if ui.add(egui::SelectableLabel::new(checked, label)).clicked() {
+                            if selected.contains(&i) {
+                                selected.remove(&i);
+                            } else {
+                                selected.insert(i);
+                            }
+                        }
+                    }
+                });
+            }
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
@@ -358,14 +396,14 @@ impl epi::App for TemplateApp {
                         }
                     }
                     // Draw hole
-                    let points = problem
-                        .hole
-                        .iter()
-                        .map(|x| to_screen * *x)
-                        .collect();
+                    let points = problem.hole.iter().map(|x| to_screen * *x).collect();
                     shapes.push(egui::Shape::closed_line(points, hole_stroke));
                     // Draw pose
-                    for edge in &problem.figure.edges {
+                    for ix in 0..problem.figure.edges.len() {
+                        if selected.len() != 0 && !selected.contains(&ix) {
+                            continue;
+                        }
+                        let edge = problem.figure.edges[ix];
                         let p1 = pose[edge.0];
                         let p2 = pose[edge.1];
                         let points = vec![to_screen * p1, to_screen * p2];
