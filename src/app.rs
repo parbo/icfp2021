@@ -1,36 +1,84 @@
 use eframe::{egui, epi};
+//extern crate env_file;
+
+use serde::{Deserialize, Serialize};
+use std::error::Error;
+use std::fs::File;
+use std::io::BufReader;
+use std::path::Path;
+
+pub type Point = [i32;2];
+
+fn to_pos2(v: Point) -> egui::Pos2 {
+    let x = v[0] as f32;
+    let y = v[1] as f32;
+    egui::Pos2 { x, y }
+}
+
+pub type Hole = Vec<Point>;
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct Figure {
+    vertices: Vec<Point>,
+    edges: Vec<(usize, usize)>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct Problem {
+    hole: Hole,
+    figure: Figure,
+    epsilon: i32,
+}
+
+fn read_problem_from_file<P: AsRef<Path>>(path: P) -> Result<Problem, Box<dyn Error>> {
+    // Open the file in read-only mode with buffer.
+    let file = File::open(path)?;
+    let reader = BufReader::new(file);
+
+    // Read the JSON contents of the file as an instance of `Problem`.
+    let u = serde_json::from_reader(reader)?;
+
+    // Return the `User`.
+    Ok(u)
+}
 
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
 #[cfg_attr(feature = "persistence", derive(serde::Deserialize, serde::Serialize))]
 #[cfg_attr(feature = "persistence", serde(default))] // if we add new fields, give them default values when deserializing old state
 pub struct TemplateApp {
     // Example stuff:
-    label: String,
+    filename: String,
 
-    // this how you opt-out of serialization of a member
     #[cfg_attr(feature = "persistence", serde(skip))]
-    value: f32,
+    problem: Option<Problem>,
 }
 
 impl Default for TemplateApp {
     fn default() -> Self {
         Self {
             // Example stuff:
-            label: "Hello World!".to_owned(),
-            value: 2.7,
+            filename: "problems/1.problem".to_owned(),
+	    problem: None,
         }
     }
 }
 
 impl epi::App for TemplateApp {
     fn name(&self) -> &str {
-        "egui template"
+        "icfp 2021"
     }
 
     /// Called by the framework to load old app state (if any).
     #[cfg(feature = "persistence")]
-    fn load(&mut self, storage: &dyn epi::Storage) {
-        *self = epi::get_value(storage, epi::APP_KEY).unwrap_or_default()
+   fn setup(
+        &mut self,
+        _ctx: &egui::CtxRef,
+        _frame: &mut epi::Frame<'_>,
+        storage: Option<&dyn epi::Storage>,
+    ) {
+        if let Some(storage) = storage {
+            *self = epi::get_value(storage, epi::APP_KEY).unwrap_or_default()
+        }
     }
 
     /// Called by the frame work to save state before shutdown.
@@ -39,15 +87,8 @@ impl epi::App for TemplateApp {
         epi::set_value(storage, epi::APP_KEY, self);
     }
 
-    /// Called each time the UI needs repainting, which may be many times per second.
-    /// Put your widgets into a `SidePanel`, `TopPanel`, `CentralPanel`, `Window` or `Area`.
     fn update(&mut self, ctx: &egui::CtxRef, frame: &mut epi::Frame<'_>) {
-        let Self { label, value } = self;
-
-        // Examples of how to create different panels and windows.
-        // Pick whichever suits you.
-        // Tip: a good default choice is to just keep the `CentralPanel`.
-        // For inspiration and more examples, go to https://emilk.github.io/egui
+        let Self { filename, problem } = self;
 
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             // The top panel is often a good place for a menu bar:
@@ -61,44 +102,56 @@ impl epi::App for TemplateApp {
         });
 
         egui::SidePanel::left("side_panel").show(ctx, |ui| {
-            ui.heading("Side Panel");
-
             ui.horizontal(|ui| {
-                ui.label("Write something: ");
-                ui.text_edit_singleline(label);
+                ui.label("Filename: ");
+                ui.text_edit_singleline(filename);
             });
 
-            ui.add(egui::Slider::new(value, 0.0..=10.0).text("value"));
-            if ui.button("Increment").clicked() {
-                *value += 1.0;
+            if ui.button("Load").clicked() {
+		if let Ok(read_problem) = read_problem_from_file(&filename) {
+		    *problem = Some(read_problem);
+		    println!("Problem: {:?}", problem);
+		}
             }
-
-            ui.with_layout(egui::Layout::bottom_up(egui::Align::Center), |ui| {
-                ui.add(
-                    egui::Hyperlink::new("https://github.com/emilk/egui/").text("powered by egui"),
-                );
-            });
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            // The central panel the region left after adding TopPanel's and SidePanel's
+	    egui::Frame::dark_canvas(ui.style()).show(ui, |ui| {
+		ui.ctx().request_repaint();
 
-            ui.heading("egui template");
-            ui.hyperlink("https://github.com/emilk/egui_template");
-            ui.add(egui::github_link_file!(
-                "https://github.com/emilk/egui_template/blob/master/",
-                "Source code."
-            ));
-            egui::warn_if_debug_build(ui);
-        });
-
-        if false {
-            egui::Window::new("Window").show(ctx, |ui| {
-                ui.label("Windows can be moved by dragging them.");
-                ui.label("They are automatically sized based on contents.");
-                ui.label("You can turn on resizing and scrolling if you like.");
-                ui.label("You would normally chose either panels OR windows.");
-            });
-        }
+		let mut shapes = vec![];
+		let hole_stroke = egui::Stroke::new(1.0, egui::Color32::LIGHT_BLUE);
+		let pose_stroke = egui::Stroke::new(1.0, egui::Color32::RED);
+		if let Some(problem) = problem {
+		    // Transform so hole fits area
+		    let desired_size = ui.available_size();
+		    let (_id, rect) = ui.allocate_space(desired_size);
+		    let min_x = problem.hole.iter().map(|x| x[0]).min().unwrap_or(0) as f32;
+		    let mut max_x = problem.hole.iter().map(|x| x[0]).max().unwrap_or(0) as f32;
+		    let min_y = problem.hole.iter().map(|x| x[1]).min().unwrap_or(0) as f32;
+		    let mut max_y = problem.hole.iter().map(|x| x[1]).max().unwrap_or(0) as f32;
+		    let width = max_x - min_x;
+		    let height = max_y - min_y;
+		    let x_ratio = desired_size.x / width;
+		    let y_ratio = desired_size.y / height;
+		    if y_ratio < x_ratio {
+			max_x = min_x + width * (desired_size.x / desired_size.y);
+		    } else {
+			max_y = min_y + height * (desired_size.y / desired_size.x);
+		    };
+		    let to_screen =
+			egui::emath::RectTransform::from_to(egui::Rect::from_x_y_ranges(min_x..=max_x, min_y..=max_y), rect);
+		    // Draw hole
+		    let points = problem.hole.iter().map(|x| to_screen * to_pos2(*x)).collect();
+		    shapes.push(egui::Shape::closed_line(points, hole_stroke));
+		    // Draw pose
+		    for edge in &problem.figure.edges {
+			let points = vec![to_screen * to_pos2(problem.figure.vertices[edge.0]), to_screen * to_pos2(problem.figure.vertices[edge.1])];
+			shapes.push(egui::Shape::line(points, pose_stroke));
+		    }
+		}
+		ui.painter().extend(shapes);
+	    });
+	});
     }
 }

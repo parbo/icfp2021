@@ -14,8 +14,12 @@ eframe = "0.13.0" # Gives us egui, epi and web+native backends
 
 serde = { version = "1", features = ["derive"], optional = true }
 
+serde_json = "1.0.59"
+dotenv = "0.15.0"
+env_file = "0.1"
+
 [features]
-default = []
+default = ["persistence", "http"]
 http = ["eframe/http"] # Enable if you want to do http requests
 persistence = ["eframe/persistence", "serde"] # Enable if you want to persist app state on shutdown
 
