@@ -7,13 +7,7 @@ use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
 
-pub type Point = [i32; 2];
-
-fn to_pos2(v: Point) -> egui::Pos2 {
-    let x = v[0] as f32;
-    let y = v[1] as f32;
-    egui::Pos2 { x, y }
-}
+pub type Point = egui::Pos2;
 
 pub type Hole = Vec<Point>;
 
@@ -30,6 +24,12 @@ pub struct Problem {
     epsilon: i32,
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+pub struct Pose {
+    vertices: Vec<[i32; 2]>,
+}
+
+
 fn read_problem_from_file<P: AsRef<Path>>(path: P) -> Result<Problem, Box<dyn Error>> {
     // Open the file in read-only mode with buffer.
     let file = File::open(path)?;
@@ -38,23 +38,31 @@ fn read_problem_from_file<P: AsRef<Path>>(path: P) -> Result<Problem, Box<dyn Er
     // Read the JSON contents of the file as an instance of `Problem`.
     let u = serde_json::from_reader(reader)?;
 
-    // Return the `User`.
+    // Return the `Problem`.
     Ok(u)
 }
 
+fn write_solution_to_file<P: AsRef<Path>>(path: P, verts: &[Point]) -> Result<(), Box<dyn Error>> {
+    let file = File::create(path)?;
+    let vertices : Vec<_> = verts.into_iter().map(|p| [p.x as i32, p.y as i32]).collect();
+    let p = Pose { vertices };
+    serde_json::to_writer(&file, &p)?;
+    return Ok(());
+}
+
 fn intersects(a: (Point, Point), b: (Point, Point)) -> bool {
-    let [x1, y1] = a.0;
-    let [x2, y2] = a.1;
-    let [x3, y3] = b.0;
-    let [x4, y4] = b.1;
+    let Point { x: x1, y: y1 } = a.0;
+    let Point { x: x2, y: y2 } = a.1;
+    let Point { x: x3, y: y3 } = b.0;
+    let Point { x: x4, y: y4 } = b.1;
     let tq = (x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4);
     let td = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
-    if td != 0 {
+    if td != 0.0 {
         let t = tq as f32 / td as f32;
         if 0.0 < t && t < 1.0 {
             let uq = (x2 - x1) * (y1 - y3) - (y2 - y1) * (x1 - x3);
             let ud = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
-            if ud != 0 {
+            if ud != 0.0 {
                 let u = uq as f32 / ud as f32;
                 if 0.0 < u && u < 1.0 {
                     return true;
@@ -65,7 +73,7 @@ fn intersects(a: (Point, Point), b: (Point, Point)) -> bool {
     return false;
 }
 
-fn inside(poly: &[Point], p: Point) -> bool {
+fn inside(poly: &[egui::Pos2], p: egui::Pos2) -> bool {
     if poly.len() == 0 {
         return false;
     }
@@ -73,10 +81,10 @@ fn inside(poly: &[Point], p: Point) -> bool {
     let mut j = poly.len() - 1;
     let mut c = false;
     while i < poly.len() {
-	// If the point is in the polygon, then it is inside
-	if p == poly[i] {
-	    return true;
-	}
+        // If the point is in the polygon, then it is inside
+        if p == poly[i] {
+            return true;
+        }
         if (((poly[i][1] <= p[1]) && (p[1] < poly[j][1]))
             || ((poly[j][1] <= p[1]) && (p[1] < poly[i][1])))
             && (p[0]
@@ -91,6 +99,107 @@ fn inside(poly: &[Point], p: Point) -> bool {
     return c;
 }
 
+fn place_vertice(
+    problem: &Problem,
+    verts: Vec<Point>,
+    min_x: i32,
+    max_x: i32,
+    min_y: i32,
+    max_y: i32,
+) -> Option<Vec<Point>> {
+    let ix = verts.len();
+    if ix == problem.figure.vertices.len() {
+        for (a, b) in &problem.figure.edges {
+            let p1 = problem.figure.vertices[*a];
+            let p2 = problem.figure.vertices[*b];
+            let d = (p1[0] - p2[0]) * (p1[0] - p2[0]) + (p1[1] - p2[1]) * (p1[1] - p2[1]);
+            let pp1 = verts[*a];
+            let pp2 = verts[*b];
+            let dd = (pp1[0] - pp2[0]) * (pp1[0] - pp2[0])
+                + (pp1[1] - pp2[1]) * (pp1[1] - pp2[1]);
+            let eps = 1000000.0 * ((d as f32 / dd as f32) - 1.0).abs();
+	    println!("{}, {}, {}, {}", d, dd, eps, problem.epsilon);
+	}
+        println!("all successfully placed! {:?}", verts);
+        return Some(verts);
+    }
+    let hole = problem.hole.clone();
+    for x in min_x..=max_x {
+        for y in min_y..=max_y {
+            let p = Point {
+                x: x as f32,
+                y: y as f32,
+            };
+            // Is the point inside?
+            if !inside(&hole, p) {
+                continue;
+            }
+            // Are all placed edges inside?
+            // Are all placed edges within the constraint?
+            let mut ok = true;
+            for (a, b) in &problem.figure.edges {
+		// Only check the new edges enabled by this point
+                if (*a == ix || *b == ix) && *a <= ix && *b <= ix {
+                    let p1 = problem.figure.vertices[*a];
+                    let p2 = problem.figure.vertices[*b];
+                    let d = (p1[0] - p2[0]) * (p1[0] - p2[0]) + (p1[1] - p2[1]) * (p1[1] - p2[1]);
+                    let pp1 = if *a == ix { p } else { verts[*a] };
+                    let pp2 = if *b == ix { p } else { verts[*b] };
+                    let dd = (pp1[0] - pp2[0]) * (pp1[0] - pp2[0])
+                        + (pp1[1] - pp2[1]) * (pp1[1] - pp2[1]);
+                    let eps = 1000000.0 * ((d as f32 / dd as f32) - 1.0).abs();
+                    if eps as i32 > problem.epsilon {
+                        ok = false;
+                        break;
+                    }
+                    // check intersections
+                    let mut i = 0;
+                    let l = problem.hole.len();
+                    while i < l {
+                        let j = (i + 1) % l;
+                        if intersects((pp1, pp2), (problem.hole[i], problem.hole[j])) {
+                            ok = false;
+                            break;
+                        }
+                        i += 1;
+                    }
+		    // check that the whole line is inside (there must be a fast and correct way to do this)
+                    // This is not really 100% correct
+                    for i in 0..1000 {
+                        let dir = [pp2[0] - pp1[0], pp2[1] - pp1[1]];
+                        let r = i as f32;
+                        let pppp = Point {
+                            x: pp1[0] + (r * dir[0]) / 1000.0,
+                            y: pp1[1] + (r * dir[1]) / 1000.0,
+                        };
+                        if !inside(&problem.hole, pppp) {
+                            ok = false;
+                            break;
+                        }
+                    }
+                }
+            }
+            if ok {
+                let mut v = verts.clone();
+                v.push(p);
+                if let Some(res) = place_vertice(problem, v, min_x, max_x, min_y, max_y) {
+                    return Some(res);
+                }
+            }
+        }
+    }
+    return None;
+}
+
+fn solve(problem: &Problem) -> Option<Vec<Point>> {
+    let min_x = problem.hole.iter().map(|x| x[0] as i32).min().unwrap_or(0);
+    let max_x = problem.hole.iter().map(|x| x[0] as i32).max().unwrap_or(0);
+    let min_y = problem.hole.iter().map(|x| x[1] as i32).min().unwrap_or(0);
+    let max_y = problem.hole.iter().map(|x| x[1] as i32).max().unwrap_or(0);
+    let v = vec![];
+    place_vertice(problem, v, min_x, max_x, min_y, max_y)
+}
+
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
 #[cfg_attr(feature = "persistence", derive(serde::Deserialize, serde::Serialize))]
 #[cfg_attr(feature = "persistence", serde(default))] // if we add new fields, give them default values when deserializing old state
@@ -100,6 +209,9 @@ pub struct TemplateApp {
 
     #[cfg_attr(feature = "persistence", serde(skip))]
     problem: Option<Problem>,
+
+    #[cfg_attr(feature = "persistence", serde(skip))]
+    pose: Vec<Point>,
 }
 
 impl Default for TemplateApp {
@@ -109,6 +221,7 @@ impl Default for TemplateApp {
             filename: "problems/1.problem".to_owned(),
             grid: false,
             problem: None,
+            pose: vec![],
         }
     }
 }
@@ -142,6 +255,7 @@ impl epi::App for TemplateApp {
             filename,
             grid,
             problem,
+            pose,
         } = self;
 
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
@@ -163,11 +277,26 @@ impl epi::App for TemplateApp {
 
             if ui.button("Load").clicked() {
                 if let Ok(read_problem) = read_problem_from_file(&filename) {
+                    *pose = read_problem.figure.vertices.clone();
                     *problem = Some(read_problem);
                     println!("Problem: {:?}", problem);
                 }
             }
             ui.checkbox(grid, "Show Grid");
+            ui.group(|ui| {
+                ui.set_enabled(problem.is_some());
+                if ui.button("Solve").clicked() {
+                    if let Some(res) = solve(problem.as_ref().unwrap()) {
+                        *pose = res;
+                    }
+                }
+		if ui.button("save").clicked() {
+		    let out_filename = filename.to_owned() + ".solution.json";
+                    if let Ok(_) = write_solution_to_file(&out_filename, &pose) {
+			println!("saved solution!");
+                    }
+		}
+            });
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
@@ -188,10 +317,12 @@ impl epi::App for TemplateApp {
                 let grid_stroke = egui::Stroke::new(1.0, egui::Color32::LIGHT_GRAY);
                 if let Some(problem) = problem {
                     // Transform so hole fits area
-                    let min_x = problem.hole.iter().map(|x| x[0]).min().unwrap_or(0) as f32;
-                    let mut max_x = problem.hole.iter().map(|x| x[0]).max().unwrap_or(0) as f32;
-                    let min_y = problem.hole.iter().map(|x| x[1]).min().unwrap_or(0) as f32;
-                    let mut max_y = problem.hole.iter().map(|x| x[1]).max().unwrap_or(0) as f32;
+                    let min_x = problem.hole.iter().map(|x| x[0] as i32).min().unwrap_or(0) as f32;
+                    let mut max_x =
+                        problem.hole.iter().map(|x| x[0] as i32).max().unwrap_or(0) as f32;
+                    let min_y = problem.hole.iter().map(|x| x[1] as i32).min().unwrap_or(0) as f32;
+                    let mut max_y =
+                        problem.hole.iter().map(|x| x[1] as i32).max().unwrap_or(0) as f32;
                     let width = max_x - min_x;
                     let height = max_y - min_y;
                     let x_ratio = desired_size.x / width;
@@ -230,14 +361,14 @@ impl epi::App for TemplateApp {
                     let points = problem
                         .hole
                         .iter()
-                        .map(|x| to_screen * to_pos2(*x))
+                        .map(|x| to_screen * *x)
                         .collect();
                     shapes.push(egui::Shape::closed_line(points, hole_stroke));
                     // Draw pose
                     for edge in &problem.figure.edges {
-                        let p1 = problem.figure.vertices[edge.0];
-                        let p2 = problem.figure.vertices[edge.1];
-                        let points = vec![to_screen * to_pos2(p1), to_screen * to_pos2(p2)];
+                        let p1 = pose[edge.0];
+                        let p2 = pose[edge.1];
+                        let points = vec![to_screen * p1, to_screen * p2];
                         let mut stroke = if !inside(&problem.hole, p1) || !inside(&problem.hole, p2)
                         {
                             outside_stroke
