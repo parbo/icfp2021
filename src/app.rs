@@ -142,7 +142,7 @@ fn calc_constrainedness(problem: &Problem, pose: &HashMap<usize, [i32; 2]>) -> (
             *cnt.entry(*b).or_insert(0) += inc;
         }
     }
-    cnt.into_iter().max_by(|x, y| x.1.cmp(&y.1)).unwrap()
+    cnt.into_iter().max_by(|x, y| x.1.cmp(&y.1)).unwrap_or((0, 0))
 }
 
 fn calc_dislikes(problem: &Problem, pose: &HashMap<usize, [i32; 2]>) -> i32 {
@@ -238,18 +238,7 @@ fn solve(problem: &Problem) -> Option<Vec<[i32; 2]>> {
         //	println!("{}, {:?}", dislikes, verts);
         let num = verts.len();
         if num == problem.figure.vertices.len() {
-            for (a, b) in &problem.figure.edges {
-                let p1 = problem.figure.vertices[*a];
-                let p2 = problem.figure.vertices[*b];
-                let d = (p1[0] - p2[0]) * (p1[0] - p2[0]) + (p1[1] - p2[1]) * (p1[1] - p2[1]);
-                let pp1 = verts[a];
-                let pp2 = verts[b];
-                let dd =
-                    (pp1[0] - pp2[0]) * (pp1[0] - pp2[0]) + (pp1[1] - pp2[1]) * (pp1[1] - pp2[1]);
-                let eps = 1000000.0 * ((d as f32 / dd as f32) - 1.0).abs();
-                println!("{}, {}, {}, {}, {}", d, dd, eps, problem.epsilon, dislikes);
-            }
-            println!("all successfully placed! {:?}", verts);
+            println!("all successfully placed! {:?}, {}", verts, dislikes);
             let mut v = vec![];
             for i in 0..num {
                 v.push(verts[&i]);
