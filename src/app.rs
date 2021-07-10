@@ -101,34 +101,32 @@ fn inside(poly: &[egui::Pos2], p: egui::Pos2) -> bool {
 
 fn place_vertice(
     problem: &Problem,
-    memo: &mut HashMap<Vec<[i32; 2]>, Option<Vec<[i32; 2]>>>,
-    verts: Vec<[i32; 2]>,
+    verts: HashMap<usize, [i32; 2]>,
     min_x: i32,
     max_x: i32,
     min_y: i32,
     max_y: i32,
 ) -> Option<Vec<[i32; 2]>> {
-    if let Some(p) = memo.get(&verts) {
-        println!("memoized");
-        return p.clone();
-    }
-    let ix = verts.len();
-    if ix == problem.figure.vertices.len() {
+    let num = verts.len();
+    if num == problem.figure.vertices.len() {
         for (a, b) in &problem.figure.edges {
             let p1 = problem.figure.vertices[*a];
             let p2 = problem.figure.vertices[*b];
             let d = (p1[0] - p2[0]) * (p1[0] - p2[0]) + (p1[1] - p2[1]) * (p1[1] - p2[1]);
-            let pp1 = verts[*a];
-            let pp2 = verts[*b];
+            let pp1 = verts[a];
+            let pp2 = verts[b];
             let dd = (pp1[0] - pp2[0]) * (pp1[0] - pp2[0]) + (pp1[1] - pp2[1]) * (pp1[1] - pp2[1]);
             let eps = 1000000.0 * ((d as f32 / dd as f32) - 1.0).abs();
             println!("{}, {}, {}, {}", d, dd, eps, problem.epsilon);
         }
         println!("all successfully placed! {:?}", verts);
-        let v = verts.clone();
-        memo.insert(verts, Some(v.clone()));
+	let mut v = vec![];
+	for i in 0..num {
+	    v.push(verts[&i]);
+	}
         return Some(v);
     }
+    let ix = num; // TODO: select the most constrained one
     let hole = problem.hole.clone();
     for x in min_x..=max_x {
         for y in min_y..=max_y {
@@ -145,14 +143,14 @@ fn place_vertice(
             let mut ok = true;
             for (a, b) in &problem.figure.edges {
                 // Only check the new edges enabled by this point
-                if (*a == ix || *b == ix) && *a <= ix && *b <= ix {
+                if (*a == ix || verts.contains_key(a)) && (*b == ix || verts.contains_key(b)) {
                     let p1 = problem.figure.vertices[*a];
                     let p2 = problem.figure.vertices[*b];
                     let d = (p1[0] - p2[0]) * (p1[0] - p2[0]) + (p1[1] - p2[1]) * (p1[1] - p2[1]);
                     let pp1 = if *a == ix {
                         point
                     } else {
-                        let [x, y] = verts[*a];
+                        let [x, y] = verts[a];
                         Point {
                             x: x as f32,
                             y: y as f32,
@@ -161,7 +159,7 @@ fn place_vertice(
                     let pp2 = if *b == ix {
                         point
                     } else {
-                        let [x, y] = verts[*b];
+                        let [x, y] = verts[b];
                         Point {
                             x: x as f32,
                             y: y as f32,
@@ -203,15 +201,13 @@ fn place_vertice(
             }
             if ok {
                 let mut v = verts.clone();
-                v.push([point.x as i32, point.y as i32]);
-                if let Some(res) = place_vertice(problem, memo, v, min_x, max_x, min_y, max_y) {
-                    memo.insert(verts, Some(res.clone()));
+                v.insert(ix, [point.x as i32, point.y as i32]);
+                if let Some(res) = place_vertice(problem, v, min_x, max_x, min_y, max_y) {
                     return Some(res);
                 }
             }
         }
     }
-    memo.insert(verts, None);
     None
 }
 
@@ -220,9 +216,8 @@ fn solve(problem: &Problem) -> Option<Vec<[i32; 2]>> {
     let max_x = problem.hole.iter().map(|x| x[0] as i32).max().unwrap_or(0);
     let min_y = problem.hole.iter().map(|x| x[1] as i32).min().unwrap_or(0);
     let max_y = problem.hole.iter().map(|x| x[1] as i32).max().unwrap_or(0);
-    let v = vec![];
-    let mut m = HashMap::new();
-    place_vertice(problem, &mut m, v, min_x, max_x, min_y, max_y)
+    let v = HashMap::new();
+    place_vertice(problem, v, min_x, max_x, min_y, max_y)
 }
 
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
