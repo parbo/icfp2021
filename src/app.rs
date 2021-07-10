@@ -2,6 +2,7 @@ use eframe::{egui, epi};
 //extern crate env_file;
 
 use itertools::Itertools;
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
@@ -307,6 +308,10 @@ impl PolygonApp {
         // println!("solving: {} iterations", iterations);
         let mut iter = 0;
         let problem = self.problem.as_ref().unwrap();
+        let candidates: Vec<_> = (self.solution.min_x..=self.solution.max_x)
+            .cartesian_product(self.solution.min_y..=self.solution.max_y)
+            .cartesian_product(0..problem.figure.vertices.len())
+            .collect();
         while let Some(t) = self.solution.queue.pop() {
             let Thing {
                 num: _wanted_num,
@@ -335,16 +340,15 @@ impl PolygonApp {
                 }
             }
             // let num_queued = self.solution.queue.len();
-            let ok_points: Vec<_> = (self.solution.min_x..=self.solution.max_x)
-                .cartesian_product(self.solution.min_y..=self.solution.max_y)
-                .cartesian_product(0..problem.figure.vertices.len())
+            let ok_points: Vec<_> = candidates
+                .par_iter()
                 .filter_map(|((x, y), ix)| {
-                    if ix != constrainedness.0 {
+                    if *ix != constrainedness.0 {
                         return None;
                     }
                     let point = Point {
-                        x: x as f32,
-                        y: y as f32,
+                        x: *x as f32,
+                        y: *y as f32,
                     };
                     // Is the point inside?
                     if !inside(&problem.hole, point) {
@@ -355,14 +359,14 @@ impl PolygonApp {
                     let mut ok = true;
                     for (a, b) in &problem.figure.edges {
                         // Only check the new edges enabled by this point
-                        if (*a == ix || verts.contains_key(a))
-                            && (*b == ix || verts.contains_key(b))
+                        if (*a == *ix || verts.contains_key(a))
+                            && (*b == *ix || verts.contains_key(b))
                         {
                             let p1 = problem.figure.vertices[*a];
                             let p2 = problem.figure.vertices[*b];
                             let distance = (p1[0] - p2[0]) * (p1[0] - p2[0])
                                 + (p1[1] - p2[1]) * (p1[1] - p2[1]);
-                            let pp1 = if *a == ix {
+                            let pp1 = if *a == *ix {
                                 point
                             } else {
                                 let [x, y] = verts[a];
@@ -371,7 +375,7 @@ impl PolygonApp {
                                     y: y as f32,
                                 }
                             };
-                            let pp2 = if *b == ix {
+                            let pp2 = if *b == *ix {
                                 point
                             } else {
                                 let [x, y] = verts[b];
@@ -411,7 +415,7 @@ impl PolygonApp {
             for (ix, point) in ok_points {
                 let mut points = vec![];
                 for i in 0..problem.figure.vertices.len() {
-                    if i == ix {
+                    if i == *ix {
                         points.push([point.x as i32, point.y as i32]);
                     } else {
                         let vertex = problem.figure.vertices[i];
@@ -422,7 +426,7 @@ impl PolygonApp {
                 }
                 if self.solution.seen.insert(points) {
                     let mut v = verts.clone();
-                    v.insert(ix, [point.x as i32, point.y as i32]);
+                    v.insert(*ix, [point.x as i32, point.y as i32]);
                     let new_dislikes = calc_dislikes(&problem, &v);
                     let new_constrainedness = calc_constrainedness(&problem, &v);
                     let t = Thing {
