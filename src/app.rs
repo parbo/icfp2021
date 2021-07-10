@@ -222,6 +222,9 @@ pub struct PolygonApp {
     pose: HashMap<usize, [i32; 2]>,
 
     #[cfg_attr(feature = "persistence", serde(skip))]
+    best_pose: HashMap<usize, [i32; 2]>,
+
+    #[cfg_attr(feature = "persistence", serde(skip))]
     selected: HashSet<usize>,
 
     #[cfg_attr(feature = "persistence", serde(skip))]
@@ -297,7 +300,7 @@ impl PolygonApp {
     }
 
     fn solve(&mut self, iterations: usize) {
-        println!("solving: {} iterations", iterations);
+        // println!("solving: {} iterations", iterations);
         let mut iter = 0;
         let problem = self.problem.as_ref().unwrap();
         while let Some(t) = self.solution.queue.pop() {
@@ -312,7 +315,6 @@ impl PolygonApp {
             // println!("{}, {:?}", dislikes, verts);
             let num = verts.len();
             if num == problem.figure.vertices.len() {
-                println!("all successfully placed! {:?}, {}", verts, dislikes);
                 if dislikes == 0 {
                     self.solving = false;
                     self.solution.solved = true;
@@ -320,8 +322,9 @@ impl PolygonApp {
                 }
                 if let Some(lowest) = self.solution.lowest_dislikes {
                     if dislikes < lowest {
+			println!("New best! {:?}, {}", verts, dislikes);
                         self.solution.lowest_dislikes = Some(dislikes);
-                        self.pose = verts.clone();
+                        self.best_pose = verts.clone();
                     }
                 } else {
                     self.solution.lowest_dislikes = Some(dislikes);
@@ -458,10 +461,8 @@ impl PolygonApp {
             iter += 1;
             self.solution.iterations += 1;
             if iter > iterations {
-                if self.solution.lowest_dislikes.is_none() {
-                    self.pose = verts;
-                }
-                println!("solved {} iterations, {:?}", iterations, self.pose);
+                self.pose = verts.clone();
+                // println!("solved {} iterations, {:?}", iterations, self.pose);
                 return;
             }
         }
@@ -490,6 +491,7 @@ impl Default for PolygonApp {
             pose: HashMap::new(),
             selected: HashSet::new(),
             solving: false,
+	    best_pose: HashMap::new(),
         }
     }
 }
@@ -544,6 +546,7 @@ impl epi::App for PolygonApp {
                         pose.insert(i, [p.x as i32, p.y as i32]);
                     }
                     self.pose = pose;
+                    self.best_pose = HashMap::new();
                     self.problem = Some(read_problem);
                     self.init_solution();
                     println!("Problem: {:?}", self.problem);
@@ -564,7 +567,7 @@ impl epi::App for PolygonApp {
                     let mut pose = vec![];
                     let problem = self.problem.as_ref().unwrap();
                     for i in 0..problem.figure.vertices.len() {
-                        if let Some(p) = self.pose.get(&i) {
+                        if let Some(p) = self.best_pose.get(&i) {
                             pose.push(Point {
                                 x: p[0] as f32,
                                 y: p[1] as f32,
@@ -596,8 +599,8 @@ impl epi::App for PolygonApp {
                         let opp1 = [op1.x as i32, op1.y as i32];
                         let op2 = problem.figure.vertices[edge.1];
                         let opp2 = [op2.x as i32, op2.y as i32];
-                        let p1 = self.pose.get(&edge.0).unwrap_or(&opp1);
-                        let p2 = self.pose.get(&edge.1).unwrap_or(&opp2);
+                        let p1 = self.best_pose.get(&edge.0).unwrap_or(&opp1);
+                        let p2 = self.best_pose.get(&edge.1).unwrap_or(&opp2);
                         let edge_valid =
                             self.pose.contains_key(&edge.0) && self.pose.contains_key(&edge.1);
                         let pp1 = Point {
@@ -649,6 +652,7 @@ impl epi::App for PolygonApp {
                 let intersect_stroke = egui::Stroke::new(2.0, egui::Color32::RED);
                 let outside_stroke = egui::Stroke::new(2.0, egui::Color32::YELLOW);
                 let invalid_stroke = egui::Stroke::new(1.0, egui::Color32::GOLD);
+                let best_stroke = egui::Stroke::new(2.0, egui::Color32::BLUE);
                 let grid_stroke = egui::Stroke::new(1.0, egui::Color32::LIGHT_GRAY);
                 if let Some(problem) = &self.problem {
                     // Transform so hole fits area
@@ -738,6 +742,30 @@ impl epi::App for PolygonApp {
                             stroke = invalid_stroke;
                         }
                         shapes.push(egui::Shape::line(points, stroke));
+                    }
+                    // Draw best pose
+                    for ix in 0..problem.figure.edges.len() {
+                        if !self.selected.is_empty() && !self.selected.contains(&ix) {
+                            continue;
+                        }
+                        let edge = problem.figure.edges[ix];
+                        if !self.best_pose.contains_key(&edge.0)
+                            || !self.best_pose.contains_key(&edge.1)
+                        {
+                            continue;
+                        }
+                        let p1 = self.best_pose.get(&edge.0).unwrap();
+                        let p2 = self.best_pose.get(&edge.1).unwrap();
+                        let pp1 = Point {
+                            x: p1[0] as f32,
+                            y: p1[1] as f32,
+                        };
+                        let pp2 = Point {
+                            x: p2[0] as f32,
+                            y: p2[1] as f32,
+                        };
+                        let points = vec![to_screen * pp1, to_screen * pp2];
+                        shapes.push(egui::Shape::line(points, best_stroke));
                     }
                 }
                 ui.painter().extend(shapes);
