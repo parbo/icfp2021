@@ -102,6 +102,8 @@ fn inside(poly: &[egui::Pos2], p: egui::Pos2) -> bool {
 fn place_vertice(
     problem: &Problem,
     verts: HashMap<usize, [i32; 2]>,
+    mut x: i32,
+    mut y: i32,
     min_x: i32,
     max_x: i32,
     min_y: i32,
@@ -126,10 +128,46 @@ fn place_vertice(
 	}
         return Some(v);
     }
-    let ix = num; // TODO: select the most constrained one
+    // select the most constrained vertex to the one's already placed
+    let mut cnt = HashMap::new();
+    for (a, b) in &problem.figure.edges {
+	if !verts.contains_key(a) {
+	    let inc = if verts.contains_key(b) {
+		10
+	    } else {
+		1
+	    };
+	    *cnt.entry(a).or_insert(0) += inc;
+	}
+	if !verts.contains_key(b) {
+	    let inc = if verts.contains_key(a) {
+		10
+	    } else {
+		1
+	    };
+	    *cnt.entry(b).or_insert(0) += inc;
+	}
+    }
+    let ix = *cnt.into_iter().max_by(|x, y| x.1.cmp(&y.1)).unwrap().0;
     let hole = problem.hole.clone();
-    for x in min_x..=max_x {
-        for y in min_y..=max_y {
+    let orig_x = x;
+    loop {
+	x += 1;
+	if x > max_x {
+	    x = min_x
+	}
+	if x == orig_x {
+	    break;
+	}
+	let orig_y = y;
+	loop {
+	    y += 1;
+	    if y > max_y {
+		y = min_y
+	    }
+	    if y == orig_y {
+		break;
+	    }
             let point = Point {
                 x: x as f32,
                 y: y as f32,
@@ -202,7 +240,7 @@ fn place_vertice(
             if ok {
                 let mut v = verts.clone();
                 v.insert(ix, [point.x as i32, point.y as i32]);
-                if let Some(res) = place_vertice(problem, v, min_x, max_x, min_y, max_y) {
+                if let Some(res) = place_vertice(problem, v, x, y, min_x, max_x, min_y, max_y) {
                     return Some(res);
                 }
             }
@@ -216,8 +254,47 @@ fn solve(problem: &Problem) -> Option<Vec<[i32; 2]>> {
     let max_x = problem.hole.iter().map(|x| x[0] as i32).max().unwrap_or(0);
     let min_y = problem.hole.iter().map(|x| x[1] as i32).min().unwrap_or(0);
     let max_y = problem.hole.iter().map(|x| x[1] as i32).max().unwrap_or(0);
+    let x = min_x + (max_x - min_x) / 2;
+    let y = min_y + (max_y - min_y) / 2;
+    // First try with keeping the vertices with no invalid edges
+    let mut valid = HashMap::new();
+    for i in 0..problem.figure.vertices.len() {
+	let vertex = problem.figure.vertices[i];
+	valid.insert(i, [vertex.x as i32, vertex.y as i32]);
+    }
+    for ix in 0..problem.figure.edges.len() {
+        let edge = problem.figure.edges[ix];
+        let p1 = problem.figure.vertices[edge.0];
+        let p2 = problem.figure.vertices[edge.1];
+        let mut ok = if !inside(&problem.hole, p1) || !inside(&problem.hole, p2)
+        {
+	    false
+        } else {
+	    true
+        };
+	if ok {
+            let mut i = 0;
+            let l = problem.hole.len();
+            while i < l {
+                let j = (i + 1) % l;
+                if intersects((p1, p2), (problem.hole[i], problem.hole[j])) {
+                    ok = false;
+                    break;
+                }
+                i += 1;
+            }
+        }
+	if !ok {
+	    valid.remove(&edge.0);
+	    valid.remove(&edge.1);
+	}
+    }
+    if let Some(res) = place_vertice(problem, valid, x, y, min_x, max_x, min_y, max_y) {
+	return Some(res);
+    }
+    // Otherwise, place all of them
     let v = HashMap::new();
-    place_vertice(problem, v, min_x, max_x, min_y, max_y)
+    place_vertice(problem, v, x, y, min_x, max_x, min_y, max_y)
 }
 
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
