@@ -149,7 +149,7 @@ fn calc_dislikes(problem: &Problem, pose: &HashMap<usize, [i32; 2]>) -> i32 {
     let mut d_sum = 0;
     for v in &problem.hole {
         let mut min_d = None;
-        for (_ix, p) in pose {
+        for p in pose.values() {
             let d = (v.x as i32 - p[0]) * (v.x as i32 - p[0])
                 + (v.y as i32 - p[1]) * (v.y as i32 - p[1]);
             if let Some(md) = min_d {
@@ -166,7 +166,7 @@ fn calc_dislikes(problem: &Problem, pose: &HashMap<usize, [i32; 2]>) -> i32 {
 }
 
 fn solve(problem: &Problem) -> Option<Vec<[i32; 2]>> {
-    let mut q = BinaryHeap::new();
+    let mut queue = BinaryHeap::new();
 
     let min_x = problem.hole.iter().map(|x| x[0] as i32).min().unwrap_or(0);
     let max_x = problem.hole.iter().map(|x| x[0] as i32).max().unwrap_or(0);
@@ -185,21 +185,17 @@ fn solve(problem: &Problem) -> Option<Vec<[i32; 2]>> {
         let edge = problem.figure.edges[ix];
         let p1 = problem.figure.vertices[edge.0];
         let p2 = problem.figure.vertices[edge.1];
-        let mut ok = if !inside(&problem.hole, p1) || !inside(&problem.hole, p2) {
-            false
-        } else {
-            true
-        };
+        let mut ok = inside(&problem.hole, p1) && inside(&problem.hole, p2);
         if ok {
-            let mut i = 0;
-            let l = problem.hole.len();
-            while i < l {
-                let j = (i + 1) % l;
-                if intersects((p1, p2), (problem.hole[i], problem.hole[j])) {
+            let mut ix = 0;
+            let len = problem.hole.len();
+            while ix < len {
+                let jx = (ix + 1) % len;
+                if intersects((p1, p2), (problem.hole[ix], problem.hole[jx])) {
                     ok = false;
                     break;
                 }
-                i += 1;
+                ix += 1;
             }
         }
         if !ok {
@@ -209,7 +205,7 @@ fn solve(problem: &Problem) -> Option<Vec<[i32; 2]>> {
     }
     let dislikes = calc_dislikes(&problem, &valid);
     let constrainedness = calc_constrainedness(&problem, &valid);
-    q.push(Thing {
+    queue.push(Thing {
         problem: problem.clone(),
         verts: valid,
         x,
@@ -221,7 +217,7 @@ fn solve(problem: &Problem) -> Option<Vec<[i32; 2]>> {
     // Also add one where nothing is placed yet
     let v = HashMap::new();
     let constrainedness = calc_constrainedness(&problem, &v);
-    q.push(Thing {
+    queue.push(Thing {
         problem: problem.clone(),
         verts: v,
         x,
@@ -230,7 +226,7 @@ fn solve(problem: &Problem) -> Option<Vec<[i32; 2]>> {
         constrainedness,
     });
 
-    while let Some(t) = q.pop() {
+    while let Some(t) = queue.pop() {
         let Thing {
             problem,
             verts,
@@ -296,7 +292,7 @@ fn solve(problem: &Problem) -> Option<Vec<[i32; 2]>> {
                     if (*a == ix || verts.contains_key(a)) && (*b == ix || verts.contains_key(b)) {
                         let p1 = problem.figure.vertices[*a];
                         let p2 = problem.figure.vertices[*b];
-                        let d =
+                        let distance =
                             (p1[0] - p2[0]) * (p1[0] - p2[0]) + (p1[1] - p2[1]) * (p1[1] - p2[1]);
                         let pp1 = if *a == ix {
                             point
@@ -316,23 +312,23 @@ fn solve(problem: &Problem) -> Option<Vec<[i32; 2]>> {
                                 y: y as f32,
                             }
                         };
-                        let dd = (pp1[0] - pp2[0]) * (pp1[0] - pp2[0])
+                        let new_distance = (pp1[0] - pp2[0]) * (pp1[0] - pp2[0])
                             + (pp1[1] - pp2[1]) * (pp1[1] - pp2[1]);
-                        let eps = 1000000.0 * ((dd as f32 / d as f32) - 1.0).abs();
+                        let eps = 1000000.0 * ((new_distance as f32 / distance as f32) - 1.0).abs();
                         if eps as i32 > problem.epsilon {
                             ok = false;
                             break;
                         }
                         // check intersections
-                        let mut i = 0;
-                        let l = problem.hole.len();
-                        while i < l {
-                            let j = (i + 1) % l;
-                            if intersects((pp1, pp2), (problem.hole[i], problem.hole[j])) {
+                        let mut ix = 0;
+                        let len = problem.hole.len();
+                        while ix < len {
+                            let jx = (ix + 1) % len;
+                            if intersects((pp1, pp2), (problem.hole[ix], problem.hole[jx])) {
                                 ok = false;
                                 break;
                             }
-                            i += 1;
+                            ix += 1;
                         }
                         // check that the whole line is inside (there must be a fast and correct way to do this)
                         // This is not really 100% correct
@@ -355,7 +351,7 @@ fn solve(problem: &Problem) -> Option<Vec<[i32; 2]>> {
                     v.insert(ix, [point.x as i32, point.y as i32]);
                     let new_dislikes = calc_dislikes(&problem, &v);
                     let new_constrainedness = calc_constrainedness(&problem, &v);
-                    q.push(Thing {
+                    queue.push(Thing {
                         problem: problem.clone(),
                         verts: v,
                         x,
