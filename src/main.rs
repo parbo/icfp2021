@@ -8,7 +8,7 @@ use dotenv::dotenv;
 #[cfg(not(target_arch = "wasm32"))]
 fn main() {
     dotenv().ok();
-    let app = egui_template::TemplateApp::default();
+    let app = polygon::PolygonApp::default();
     let native_options = eframe::NativeOptions::default();
     eframe::run_native(Box::new(app), native_options);
 }

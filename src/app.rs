@@ -228,7 +228,7 @@ fn solve(problem: &Problem) -> Option<Vec<[i32; 2]>> {
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
 #[cfg_attr(feature = "persistence", derive(serde::Deserialize, serde::Serialize))]
 #[cfg_attr(feature = "persistence", serde(default))] // if we add new fields, give them default values when deserializing old state
-pub struct TemplateApp {
+pub struct PolygonApp {
     filename: String,
     grid: bool,
 
@@ -242,7 +242,7 @@ pub struct TemplateApp {
     selected: HashSet<usize>,
 }
 
-impl Default for TemplateApp {
+impl Default for PolygonApp {
     fn default() -> Self {
         Self {
             // Example stuff:
@@ -255,7 +255,7 @@ impl Default for TemplateApp {
     }
 }
 
-impl epi::App for TemplateApp {
+impl epi::App for PolygonApp {
     fn name(&self) -> &str {
         "icfp 2021"
     }
