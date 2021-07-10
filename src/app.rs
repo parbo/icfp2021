@@ -73,12 +73,12 @@ fn intersects(a: (Point, Point), b: (Point, Point)) -> bool {
     let td = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
     if td != 0.0 {
         let t = tq as f32 / td as f32;
-        if 0.0 <= t && t <= 1.0 {
+        if (0.0..=1.0).contains(&t) {
             let uq = (x2 - x1) * (y1 - y3) - (y2 - y1) * (x1 - x3);
             let ud = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
             if ud != 0.0 {
                 let u = uq as f32 / ud as f32;
-                if 0.0 <= u && u <= 1.0 {
+                if (0.0..=1.0).contains(&u) {
                     return true;
                 }
             }
@@ -461,7 +461,7 @@ impl PolygonApp {
             iter += 1;
             self.solution.iterations += 1;
             if iter > iterations {
-                self.pose = verts.clone();
+                self.pose = verts;
                 // println!("solved {} iterations, {:?}", iterations, self.pose);
                 return;
             }
