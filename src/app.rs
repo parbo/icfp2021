@@ -21,15 +21,24 @@ pub struct Figure {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
+pub struct Bonus {
+    position: Point,
+    bonus: String,
+    problem: usize,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
 pub struct Problem {
     hole: Hole,
     figure: Figure,
     epsilon: i32,
+    bonuses: Vec<Bonus>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
 pub struct Pose {
     vertices: Vec<[i32; 2]>,
+    bonuses: Vec<Bonus>,
 }
 
 fn read_problem_from_file<P: AsRef<Path>>(path: P) -> Result<Problem, Box<dyn Error>> {
@@ -47,7 +56,10 @@ fn read_problem_from_file<P: AsRef<Path>>(path: P) -> Result<Problem, Box<dyn Er
 fn write_solution_to_file<P: AsRef<Path>>(path: P, verts: &[Point]) -> Result<(), Box<dyn Error>> {
     let file = File::create(path)?;
     let vertices: Vec<_> = verts.iter().map(|p| [p.x as i32, p.y as i32]).collect();
-    let p = Pose { vertices };
+    let p = Pose {
+        vertices,
+        bonuses: vec![],
+    };
     serde_json::to_writer(&file, &p)?;
     Ok(())
 }
@@ -103,7 +115,6 @@ fn inside(poly: &[egui::Pos2], p: egui::Pos2) -> bool {
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 struct Thing {
-    problem: Problem,
     verts: HashMap<usize, [i32; 2]>,
     x: i32,
     y: i32,
@@ -142,7 +153,9 @@ fn calc_constrainedness(problem: &Problem, pose: &HashMap<usize, [i32; 2]>) -> (
             *cnt.entry(*b).or_insert(0) += inc;
         }
     }
-    cnt.into_iter().max_by(|x, y| x.1.cmp(&y.1)).unwrap_or((0, 0))
+    cnt.into_iter()
+        .max_by(|x, y| x.1.cmp(&y.1))
+        .unwrap_or((0, 0))
 }
 
 fn calc_dislikes(problem: &Problem, pose: &HashMap<usize, [i32; 2]>) -> i32 {
@@ -165,194 +178,14 @@ fn calc_dislikes(problem: &Problem, pose: &HashMap<usize, [i32; 2]>) -> i32 {
     d_sum
 }
 
-fn solve(problem: &Problem) -> Option<Vec<[i32; 2]>> {
-    let mut queue = BinaryHeap::new();
-
-    let min_x = problem.hole.iter().map(|x| x[0] as i32).min().unwrap_or(0);
-    let max_x = problem.hole.iter().map(|x| x[0] as i32).max().unwrap_or(0);
-    let min_y = problem.hole.iter().map(|x| x[1] as i32).min().unwrap_or(0);
-    let max_y = problem.hole.iter().map(|x| x[1] as i32).max().unwrap_or(0);
-
-    let x = min_x + (max_x - min_x) / 2;
-    let y = min_y + (max_y - min_y) / 2;
-    // First try with keeping the vertices with no invalid edges
-    let mut valid = HashMap::new();
-    for i in 0..problem.figure.vertices.len() {
-        let vertex = problem.figure.vertices[i];
-        valid.insert(i, [vertex.x as i32, vertex.y as i32]);
-    }
-    for ix in 0..problem.figure.edges.len() {
-        let edge = problem.figure.edges[ix];
-        let p1 = problem.figure.vertices[edge.0];
-        let p2 = problem.figure.vertices[edge.1];
-        let mut ok = inside(&problem.hole, p1) && inside(&problem.hole, p2);
-        if ok {
-            let mut ix = 0;
-            let len = problem.hole.len();
-            while ix < len {
-                let jx = (ix + 1) % len;
-                if intersects((p1, p2), (problem.hole[ix], problem.hole[jx])) {
-                    ok = false;
-                    break;
-                }
-                ix += 1;
-            }
-        }
-        if !ok {
-            valid.remove(&edge.0);
-            valid.remove(&edge.1);
-        }
-    }
-    let dislikes = calc_dislikes(&problem, &valid);
-    let constrainedness = calc_constrainedness(&problem, &valid);
-    queue.push(Thing {
-        problem: problem.clone(),
-        verts: valid,
-        x,
-        y,
-        dislikes,
-        constrainedness,
-    });
-
-    // Also add one where nothing is placed yet
-    let v = HashMap::new();
-    let constrainedness = calc_constrainedness(&problem, &v);
-    queue.push(Thing {
-        problem: problem.clone(),
-        verts: v,
-        x,
-        y,
-        dislikes: 0,
-        constrainedness,
-    });
-
-    while let Some(t) = queue.pop() {
-        let Thing {
-            problem,
-            verts,
-            x: orig_x,
-            y: orig_y,
-            dislikes,
-            constrainedness,
-        } = t;
-        //	println!("{}, {:?}", dislikes, verts);
-        let num = verts.len();
-        if num == problem.figure.vertices.len() {
-            println!("all successfully placed! {:?}, {}", verts, dislikes);
-            let mut v = vec![];
-            for i in 0..num {
-                v.push(verts[&i]);
-            }
-            return Some(v);
-        }
-        let ix = constrainedness.0;
-        let hole = problem.hole.clone();
-        let mut x = orig_x;
-        loop {
-            x += 1;
-            if x > max_x {
-                x = min_x
-            }
-            if x == orig_x {
-                break;
-            }
-            let mut y = orig_y;
-            loop {
-                y += 1;
-                if y > max_y {
-                    y = min_y
-                }
-                if y == orig_y {
-                    break;
-                }
-                let point = Point {
-                    x: x as f32,
-                    y: y as f32,
-                };
-                // Is the point inside?
-                if !inside(&hole, point) {
-                    continue;
-                }
-                // Are all placed edges inside?
-                // Are all placed edges within the constraint?
-                let mut ok = true;
-                for (a, b) in &problem.figure.edges {
-                    // Only check the new edges enabled by this point
-                    if (*a == ix || verts.contains_key(a)) && (*b == ix || verts.contains_key(b)) {
-                        let p1 = problem.figure.vertices[*a];
-                        let p2 = problem.figure.vertices[*b];
-                        let distance =
-                            (p1[0] - p2[0]) * (p1[0] - p2[0]) + (p1[1] - p2[1]) * (p1[1] - p2[1]);
-                        let pp1 = if *a == ix {
-                            point
-                        } else {
-                            let [x, y] = verts[a];
-                            Point {
-                                x: x as f32,
-                                y: y as f32,
-                            }
-                        };
-                        let pp2 = if *b == ix {
-                            point
-                        } else {
-                            let [x, y] = verts[b];
-                            Point {
-                                x: x as f32,
-                                y: y as f32,
-                            }
-                        };
-                        let new_distance = (pp1[0] - pp2[0]) * (pp1[0] - pp2[0])
-                            + (pp1[1] - pp2[1]) * (pp1[1] - pp2[1]);
-                        let eps = 1000000.0 * ((new_distance as f32 / distance as f32) - 1.0).abs();
-                        if eps as i32 > problem.epsilon {
-                            ok = false;
-                            break;
-                        }
-                        // check intersections
-                        let mut ix = 0;
-                        let len = problem.hole.len();
-                        while ix < len {
-                            let jx = (ix + 1) % len;
-                            if intersects((pp1, pp2), (problem.hole[ix], problem.hole[jx])) {
-                                ok = false;
-                                break;
-                            }
-                            ix += 1;
-                        }
-                        // check that the whole line is inside (there must be a fast and correct way to do this)
-                        // This is not really 100% correct
-                        for i in 0..10 {
-                            let dir = [pp2[0] - pp1[0], pp2[1] - pp1[1]];
-                            let r = i as f32;
-                            let pppp = Point {
-                                x: pp1[0] + (r * dir[0]) / 1000.0,
-                                y: pp1[1] + (r * dir[1]) / 1000.0,
-                            };
-                            if !inside(&problem.hole, pppp) {
-                                ok = false;
-                                break;
-                            }
-                        }
-                    }
-                }
-                if ok {
-                    let mut v = verts.clone();
-                    v.insert(ix, [point.x as i32, point.y as i32]);
-                    let new_dislikes = calc_dislikes(&problem, &v);
-                    let new_constrainedness = calc_constrainedness(&problem, &v);
-                    queue.push(Thing {
-                        problem: problem.clone(),
-                        verts: v,
-                        x,
-                        y,
-                        dislikes: new_dislikes,
-                        constrainedness: new_constrainedness,
-                    });
-                }
-            }
-        }
-    }
-    None
+struct Solution {
+    queue: BinaryHeap<Thing>,
+    min_x: i32,
+    max_x: i32,
+    min_y: i32,
+    max_y: i32,
+    iterations: usize,
+    solved: bool,
 }
 
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
@@ -366,10 +199,234 @@ pub struct PolygonApp {
     problem: Option<Problem>,
 
     #[cfg_attr(feature = "persistence", serde(skip))]
+    solution: Solution,
+
+    #[cfg_attr(feature = "persistence", serde(skip))]
     pose: Vec<Point>,
 
     #[cfg_attr(feature = "persistence", serde(skip))]
     selected: HashSet<usize>,
+
+    #[cfg_attr(feature = "persistence", serde(skip))]
+    solving: bool,
+}
+
+impl PolygonApp {
+    fn init_solution(&mut self) {
+        let problem = self.problem.as_ref().unwrap();
+        self.solution.min_x = problem.hole.iter().map(|x| x[0] as i32).min().unwrap_or(0);
+        self.solution.max_x = problem.hole.iter().map(|x| x[0] as i32).max().unwrap_or(0);
+        self.solution.min_y = problem.hole.iter().map(|x| x[1] as i32).min().unwrap_or(0);
+        self.solution.max_y = problem.hole.iter().map(|x| x[1] as i32).max().unwrap_or(0);
+        self.solution.iterations = 0;
+        self.solution.solved = false;
+        let x = self.solution.min_x + (self.solution.max_x - self.solution.min_x) / 2;
+        let y = self.solution.min_y + (self.solution.max_y - self.solution.min_y) / 2;
+        // First try with keeping the vertices with no invalid edges
+        let mut valid = HashMap::new();
+        for i in 0..problem.figure.vertices.len() {
+            let vertex = problem.figure.vertices[i];
+            valid.insert(i, [vertex.x as i32, vertex.y as i32]);
+        }
+        for ix in 0..problem.figure.edges.len() {
+            let edge = problem.figure.edges[ix];
+            let p1 = problem.figure.vertices[edge.0];
+            let p2 = problem.figure.vertices[edge.1];
+            let mut ok = inside(&problem.hole, p1) && inside(&problem.hole, p2);
+            if ok {
+                let mut ix = 0;
+                let len = problem.hole.len();
+                while ix < len {
+                    let jx = (ix + 1) % len;
+                    if intersects((p1, p2), (problem.hole[ix], problem.hole[jx])) {
+                        ok = false;
+                        break;
+                    }
+                    ix += 1;
+                }
+            }
+            if !ok {
+                valid.remove(&edge.0);
+                valid.remove(&edge.1);
+            }
+        }
+        let dislikes = calc_dislikes(&problem, &valid);
+        let constrainedness = calc_constrainedness(&problem, &valid);
+        self.solution.queue.push(Thing {
+            verts: valid,
+            x,
+            y,
+            dislikes,
+            constrainedness,
+        });
+
+        // Also add one where nothing is placed yet
+        let v = HashMap::new();
+        let constrainedness = calc_constrainedness(&problem, &v);
+        self.solution.queue.push(Thing {
+            verts: v,
+            x,
+            y,
+            dislikes: 0,
+            constrainedness,
+        });
+    }
+
+    fn solve(&mut self, iterations: usize) {
+        println!("solving: {} iterations", iterations);
+        let mut iter = 0;
+        let problem = self.problem.as_ref().unwrap();
+        while let Some(t) = self.solution.queue.pop() {
+            let Thing {
+                verts,
+                x: orig_x,
+                y: orig_y,
+                dislikes,
+                constrainedness,
+            } = t;
+            //	println!("{}, {:?}", dislikes, verts);
+            let num = verts.len();
+            if num == problem.figure.vertices.len() {
+                println!("all successfully placed! {:?}, {}", verts, dislikes);
+                let mut v = vec![];
+                for i in 0..num {
+                    let [x, y] = verts[&i];
+                    v.push(Point {
+                        x: x as f32,
+                        y: y as f32,
+                    });
+                }
+                self.pose = v;
+                self.solving = false;
+                self.solution.solved = true;
+                return;
+            }
+            let ix = constrainedness.0;
+            let mut x = orig_x;
+            loop {
+                x += 1;
+                if x > self.solution.max_x {
+                    x = self.solution.min_x
+                }
+                if x == orig_x {
+                    break;
+                }
+                let mut y = orig_y;
+                loop {
+                    y += 1;
+                    if y > self.solution.max_y {
+                        y = self.solution.min_y
+                    }
+                    if y == orig_y {
+                        break;
+                    }
+                    let point = Point {
+                        x: x as f32,
+                        y: y as f32,
+                    };
+                    // Is the point inside?
+                    if !inside(&problem.hole, point) {
+                        continue;
+                    }
+                    // Are all placed edges inside?
+                    // Are all placed edges within the constraint?
+                    let mut ok = true;
+                    for (a, b) in &problem.figure.edges {
+                        // Only check the new edges enabled by this point
+                        if (*a == ix || verts.contains_key(a))
+                            && (*b == ix || verts.contains_key(b))
+                        {
+                            let p1 = problem.figure.vertices[*a];
+                            let p2 = problem.figure.vertices[*b];
+                            let distance = (p1[0] - p2[0]) * (p1[0] - p2[0])
+                                + (p1[1] - p2[1]) * (p1[1] - p2[1]);
+                            let pp1 = if *a == ix {
+                                point
+                            } else {
+                                let [x, y] = verts[a];
+                                Point {
+                                    x: x as f32,
+                                    y: y as f32,
+                                }
+                            };
+                            let pp2 = if *b == ix {
+                                point
+                            } else {
+                                let [x, y] = verts[b];
+                                Point {
+                                    x: x as f32,
+                                    y: y as f32,
+                                }
+                            };
+                            let new_distance = (pp1[0] - pp2[0]) * (pp1[0] - pp2[0])
+                                + (pp1[1] - pp2[1]) * (pp1[1] - pp2[1]);
+                            let eps =
+                                1000000.0 * ((new_distance as f32 / distance as f32) - 1.0).abs();
+                            if eps as i32 > problem.epsilon {
+                                ok = false;
+                                break;
+                            }
+                            // check intersections
+                            let mut ix = 0;
+                            let len = problem.hole.len();
+                            while ix < len {
+                                let jx = (ix + 1) % len;
+                                if intersects((pp1, pp2), (problem.hole[ix], problem.hole[jx])) {
+                                    ok = false;
+                                    break;
+                                }
+                                ix += 1;
+                            }
+                            // check that the whole line is inside (there must be a fast and correct way to do this)
+                            // This is not really 100% correct
+                            for i in 0..10 {
+                                let dir = [pp2[0] - pp1[0], pp2[1] - pp1[1]];
+                                let r = i as f32;
+                                let pppp = Point {
+                                    x: pp1[0] + (r * dir[0]) / 1000.0,
+                                    y: pp1[1] + (r * dir[1]) / 1000.0,
+                                };
+                                if !inside(&problem.hole, pppp) {
+                                    ok = false;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    if ok {
+                        let mut v = verts.clone();
+                        v.insert(ix, [point.x as i32, point.y as i32]);
+                        let new_dislikes = calc_dislikes(&problem, &v);
+                        let new_constrainedness = calc_constrainedness(&problem, &v);
+                        self.solution.queue.push(Thing {
+                            verts: v,
+                            x,
+                            y,
+                            dislikes: new_dislikes,
+                            constrainedness: new_constrainedness,
+                        });
+                    }
+                }
+            }
+            iter += 1;
+            self.solution.iterations += 1;
+            if iter > iterations {
+                let mut v = vec![];
+                for i in 0..problem.figure.vertices.len() {
+                    let vertex = problem.figure.vertices[i];
+                    let pos = [vertex.x as i32, vertex.y as i32];
+                    let [x, y] = verts.get(&i).unwrap_or(&pos);
+                    v.push(Point {
+                        x: *x as f32,
+                        y: *y as f32,
+                    });
+                }
+                self.pose = v;
+                println!("solved {} iterations, {:?}", iterations, self.pose);
+                return;
+            }
+        }
+    }
 }
 
 impl Default for PolygonApp {
@@ -379,8 +436,18 @@ impl Default for PolygonApp {
             filename: "problems/1.problem".to_owned(),
             grid: false,
             problem: None,
+            solution: Solution {
+                queue: BinaryHeap::new(),
+                min_x: 0,
+                max_x: 0,
+                min_y: 0,
+                max_y: 0,
+                iterations: 0,
+                solved: false,
+            },
             pose: vec![],
             selected: HashSet::new(),
+            solving: false,
         }
     }
 }
@@ -410,14 +477,6 @@ impl epi::App for PolygonApp {
     }
 
     fn update(&mut self, ctx: &egui::CtxRef, frame: &mut epi::Frame<'_>) {
-        let Self {
-            filename,
-            grid,
-            problem,
-            pose,
-            selected,
-        } = self;
-
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             // The top panel is often a good place for a menu bar:
             egui::menu::bar(ui, |ui| {
@@ -432,57 +491,51 @@ impl epi::App for PolygonApp {
         egui::SidePanel::left("side_panel").show(ctx, |ui| {
             ui.horizontal(|ui| {
                 ui.label("Filename: ");
-                ui.text_edit_singleline(filename);
+                ui.text_edit_singleline(&mut self.filename);
             });
 
             if ui.button("Load").clicked() {
-                if let Ok(read_problem) = read_problem_from_file(&filename) {
-                    *pose = read_problem.figure.vertices.clone();
-                    *problem = Some(read_problem);
-                    println!("Problem: {:?}", problem);
+                if let Ok(read_problem) = read_problem_from_file(&self.filename) {
+                    self.pose = read_problem.figure.vertices.clone();
+                    self.problem = Some(read_problem);
+                    self.init_solution();
+                    println!("Problem: {:?}", self.problem);
                 }
             }
-            ui.checkbox(grid, "Show Grid");
+            ui.checkbox(&mut self.grid, "Show Grid");
             ui.group(|ui| {
-                ui.set_enabled(problem.is_some());
-                if ui.button("Solve").clicked() {
-                    if let Some(res) = solve(problem.as_ref().unwrap()) {
-                        *pose = res
-                            .into_iter()
-                            .map(|p| Point {
-                                x: p[0] as f32,
-                                y: p[1] as f32,
-                            })
-                            .collect();
-                    }
-                }
+                ui.set_enabled(self.problem.is_some());
+                ui.checkbox(&mut self.solving, "Solve");
+                ui.label(format!("Iterations: {}", self.solution.iterations));
+                ui.label(format!("Solved: {}", self.solution.solved));
                 if ui.button("Save").clicked() {
-                    let out_filename = filename.to_owned() + ".solution.json";
-                    if write_solution_to_file(&out_filename, &pose).is_ok() {
+                    let out_filename = self.filename.to_owned() + ".solution.json";
+                    if write_solution_to_file(&out_filename, &self.pose).is_ok() {
                         println!("saved solution!");
                     }
                 }
             });
-            if let Some(p) = problem {
+            let mut selected = self.selected.clone();
+            if let Some(problem) = &self.problem {
                 if ui.button("Select All").clicked() {
-                    *selected = HashSet::new();
+                    selected = HashSet::new();
                 }
                 egui::ScrollArea::auto_sized().show(ui, |ui| {
-                    for i in 0..p.figure.edges.len() {
+                    for i in 0..problem.figure.edges.len() {
                         let checked = selected.contains(&i);
-                        let (a, b) = p.figure.edges[i];
-                        let p1 = p.figure.vertices[a];
-                        let p2 = p.figure.vertices[b];
+                        let (a, b) = problem.figure.edges[i];
+                        let p1 = problem.figure.vertices[a];
+                        let p2 = problem.figure.vertices[b];
                         let d =
                             (p1[0] - p2[0]) * (p1[0] - p2[0]) + (p1[1] - p2[1]) * (p1[1] - p2[1]);
-                        let pp1 = pose[a];
-                        let pp2 = pose[b];
+                        let pp1 = self.pose[a];
+                        let pp2 = self.pose[b];
                         let dd = (pp1[0] - pp2[0]) * (pp1[0] - pp2[0])
                             + (pp1[1] - pp2[1]) * (pp1[1] - pp2[1]);
                         let eps = 1000000.0 * ((dd as f32 / d as f32) - 1.0).abs();
                         let label = format!(
                             "{:?}, {}, {}, {}, {}",
-                            p.figure.edges[i], d, dd, eps, p.epsilon
+                            problem.figure.edges[i], d, dd, eps, problem.epsilon
                         );
                         if ui.add(egui::SelectableLabel::new(checked, label)).clicked() {
                             if selected.contains(&i) {
@@ -493,6 +546,12 @@ impl epi::App for PolygonApp {
                         }
                     }
                 });
+            }
+            self.selected = selected;
+
+            if self.solving {
+                self.solve(10);
+                ui.ctx().request_repaint();
             }
         });
 
@@ -512,7 +571,7 @@ impl epi::App for PolygonApp {
                 let intersect_stroke = egui::Stroke::new(2.0, egui::Color32::RED);
                 let outside_stroke = egui::Stroke::new(2.0, egui::Color32::YELLOW);
                 let grid_stroke = egui::Stroke::new(1.0, egui::Color32::LIGHT_GRAY);
-                if let Some(problem) = problem {
+                if let Some(problem) = &self.problem {
                     // Transform so hole fits area
                     let min_x = problem.hole.iter().map(|x| x[0] as i32).min().unwrap_or(0) as f32;
                     let mut max_x =
@@ -533,7 +592,7 @@ impl epi::App for PolygonApp {
                         egui::Rect::from_x_y_ranges(min_x..=max_x, min_y..=max_y),
                         rect,
                     );
-                    if *grid {
+                    if self.grid {
                         // Draw grid
                         let mut x = min_x;
                         while x <= max_x {
@@ -559,12 +618,12 @@ impl epi::App for PolygonApp {
                     shapes.push(egui::Shape::closed_line(points, hole_stroke));
                     // Draw pose
                     for ix in 0..problem.figure.edges.len() {
-                        if !selected.is_empty() && !selected.contains(&ix) {
+                        if !self.selected.is_empty() && !self.selected.contains(&ix) {
                             continue;
                         }
                         let edge = problem.figure.edges[ix];
-                        let p1 = pose[edge.0];
-                        let p2 = pose[edge.1];
+                        let p1 = self.pose[edge.0];
+                        let p2 = self.pose[edge.1];
                         let points = vec![to_screen * p1, to_screen * p2];
                         let mut stroke = if !inside(&problem.hole, p1) || !inside(&problem.hole, p2)
                         {
