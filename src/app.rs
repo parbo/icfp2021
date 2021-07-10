@@ -2,6 +2,8 @@ use eframe::{egui, epi};
 //extern crate env_file;
 
 use serde::{Deserialize, Serialize};
+use std::cmp::Ordering;
+use std::collections::BinaryHeap;
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::fs::File;
@@ -12,20 +14,20 @@ pub type Point = egui::Pos2;
 
 pub type Hole = Vec<Point>;
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
 pub struct Figure {
     vertices: Vec<Point>,
     edges: Vec<(usize, usize)>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
 pub struct Problem {
     hole: Hole,
     figure: Figure,
     epsilon: i32,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
 pub struct Pose {
     vertices: Vec<[i32; 2]>,
 }
@@ -99,180 +101,96 @@ fn inside(poly: &[egui::Pos2], p: egui::Pos2) -> bool {
     c
 }
 
-fn place_vertice(
-    problem: &Problem,
+#[derive(Debug, Clone, Eq, PartialEq)]
+struct Thing {
+    problem: Problem,
     verts: HashMap<usize, [i32; 2]>,
-    mut x: i32,
-    mut y: i32,
-    min_x: i32,
-    max_x: i32,
-    min_y: i32,
-    max_y: i32,
-) -> Option<Vec<[i32; 2]>> {
-    let num = verts.len();
-    if num == problem.figure.vertices.len() {
-        for (a, b) in &problem.figure.edges {
-            let p1 = problem.figure.vertices[*a];
-            let p2 = problem.figure.vertices[*b];
-            let d = (p1[0] - p2[0]) * (p1[0] - p2[0]) + (p1[1] - p2[1]) * (p1[1] - p2[1]);
-            let pp1 = verts[a];
-            let pp2 = verts[b];
-            let dd = (pp1[0] - pp2[0]) * (pp1[0] - pp2[0]) + (pp1[1] - pp2[1]) * (pp1[1] - pp2[1]);
-            let eps = 1000000.0 * ((d as f32 / dd as f32) - 1.0).abs();
-            println!("{}, {}, {}, {}", d, dd, eps, problem.epsilon);
-        }
-        println!("all successfully placed! {:?}", verts);
-	let mut v = vec![];
-	for i in 0..num {
-	    v.push(verts[&i]);
-	}
-        return Some(v);
+    x: i32,
+    y: i32,
+    dislikes: i32,
+    constrainedness: (usize, i32),
+}
+
+impl Ord for Thing {
+    fn cmp(&self, other: &Thing) -> Ordering {
+        self.verts
+            .len()
+            .cmp(&other.verts.len())
+            .then_with(|| self.constrainedness.1.cmp(&other.constrainedness.1))
+            .then_with(|| other.dislikes.cmp(&self.dislikes))
+            .then_with(|| self.x.cmp(&other.x))
+            .then_with(|| self.y.cmp(&other.y))
     }
-    // select the most constrained vertex to the one's already placed
+}
+
+// `PartialOrd` needs to be implemented as well.
+impl PartialOrd for Thing {
+    fn partial_cmp(&self, other: &Thing) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+fn calc_constrainedness(problem: &Problem, pose: &HashMap<usize, [i32; 2]>) -> (usize, i32) {
     let mut cnt = HashMap::new();
     for (a, b) in &problem.figure.edges {
-	if !verts.contains_key(a) {
-	    let inc = if verts.contains_key(b) {
-		10
-	    } else {
-		1
-	    };
-	    *cnt.entry(a).or_insert(0) += inc;
-	}
-	if !verts.contains_key(b) {
-	    let inc = if verts.contains_key(a) {
-		10
-	    } else {
-		1
-	    };
-	    *cnt.entry(b).or_insert(0) += inc;
-	}
-    }
-    let ix = *cnt.into_iter().max_by(|x, y| x.1.cmp(&y.1)).unwrap().0;
-    let hole = problem.hole.clone();
-    let orig_x = x;
-    loop {
-	x += 1;
-	if x > max_x {
-	    x = min_x
-	}
-	if x == orig_x {
-	    break;
-	}
-	let orig_y = y;
-	loop {
-	    y += 1;
-	    if y > max_y {
-		y = min_y
-	    }
-	    if y == orig_y {
-		break;
-	    }
-            let point = Point {
-                x: x as f32,
-                y: y as f32,
-            };
-            // Is the point inside?
-            if !inside(&hole, point) {
-                continue;
-            }
-            // Are all placed edges inside?
-            // Are all placed edges within the constraint?
-            let mut ok = true;
-            for (a, b) in &problem.figure.edges {
-                // Only check the new edges enabled by this point
-                if (*a == ix || verts.contains_key(a)) && (*b == ix || verts.contains_key(b)) {
-                    let p1 = problem.figure.vertices[*a];
-                    let p2 = problem.figure.vertices[*b];
-                    let d = (p1[0] - p2[0]) * (p1[0] - p2[0]) + (p1[1] - p2[1]) * (p1[1] - p2[1]);
-                    let pp1 = if *a == ix {
-                        point
-                    } else {
-                        let [x, y] = verts[a];
-                        Point {
-                            x: x as f32,
-                            y: y as f32,
-                        }
-                    };
-                    let pp2 = if *b == ix {
-                        point
-                    } else {
-                        let [x, y] = verts[b];
-                        Point {
-                            x: x as f32,
-                            y: y as f32,
-                        }
-                    };
-                    let dd = (pp1[0] - pp2[0]) * (pp1[0] - pp2[0])
-                        + (pp1[1] - pp2[1]) * (pp1[1] - pp2[1]);
-                    let eps = 1000000.0 * ((dd as f32 / d as f32) - 1.0).abs();
-                    if eps as i32 > problem.epsilon {
-                        ok = false;
-                        break;
-                    }
-                    // check intersections
-                    let mut i = 0;
-                    let l = problem.hole.len();
-                    while i < l {
-                        let j = (i + 1) % l;
-                        if intersects((pp1, pp2), (problem.hole[i], problem.hole[j])) {
-                            ok = false;
-                            break;
-                        }
-                        i += 1;
-                    }
-                    // check that the whole line is inside (there must be a fast and correct way to do this)
-                    // This is not really 100% correct
-                    for i in 0..1000 {
-                        let dir = [pp2[0] - pp1[0], pp2[1] - pp1[1]];
-                        let r = i as f32;
-                        let pppp = Point {
-                            x: pp1[0] + (r * dir[0]) / 1000.0,
-                            y: pp1[1] + (r * dir[1]) / 1000.0,
-                        };
-                        if !inside(&problem.hole, pppp) {
-                            ok = false;
-                            break;
-                        }
-                    }
-                }
-            }
-            if ok {
-                let mut v = verts.clone();
-                v.insert(ix, [point.x as i32, point.y as i32]);
-                if let Some(res) = place_vertice(problem, v, x, y, min_x, max_x, min_y, max_y) {
-                    return Some(res);
-                }
-            }
+        if !pose.contains_key(a) {
+            let inc = if pose.contains_key(b) { 10 } else { 1 };
+            *cnt.entry(*a).or_insert(0) += inc;
+        }
+        if !pose.contains_key(b) {
+            let inc = if pose.contains_key(a) { 10 } else { 1 };
+            *cnt.entry(*b).or_insert(0) += inc;
         }
     }
-    None
+    cnt.into_iter().max_by(|x, y| x.1.cmp(&y.1)).unwrap()
+}
+
+fn calc_dislikes(problem: &Problem, pose: &HashMap<usize, [i32; 2]>) -> i32 {
+    let mut d_sum = 0;
+    for v in &problem.hole {
+        let mut min_d = None;
+        for (_ix, p) in pose {
+            let d = (v.x as i32 - p[0]) * (v.x as i32 - p[0])
+                + (v.y as i32 - p[1]) * (v.y as i32 - p[1]);
+            if let Some(md) = min_d {
+                if d < md {
+                    min_d = Some(d);
+                }
+            } else {
+                min_d = Some(d);
+            }
+        }
+        d_sum += min_d.unwrap_or(0);
+    }
+    d_sum
 }
 
 fn solve(problem: &Problem) -> Option<Vec<[i32; 2]>> {
+    let mut q = BinaryHeap::new();
+
     let min_x = problem.hole.iter().map(|x| x[0] as i32).min().unwrap_or(0);
     let max_x = problem.hole.iter().map(|x| x[0] as i32).max().unwrap_or(0);
     let min_y = problem.hole.iter().map(|x| x[1] as i32).min().unwrap_or(0);
     let max_y = problem.hole.iter().map(|x| x[1] as i32).max().unwrap_or(0);
+
     let x = min_x + (max_x - min_x) / 2;
     let y = min_y + (max_y - min_y) / 2;
     // First try with keeping the vertices with no invalid edges
     let mut valid = HashMap::new();
     for i in 0..problem.figure.vertices.len() {
-	let vertex = problem.figure.vertices[i];
-	valid.insert(i, [vertex.x as i32, vertex.y as i32]);
+        let vertex = problem.figure.vertices[i];
+        valid.insert(i, [vertex.x as i32, vertex.y as i32]);
     }
     for ix in 0..problem.figure.edges.len() {
         let edge = problem.figure.edges[ix];
         let p1 = problem.figure.vertices[edge.0];
         let p2 = problem.figure.vertices[edge.1];
-        let mut ok = if !inside(&problem.hole, p1) || !inside(&problem.hole, p2)
-        {
-	    false
+        let mut ok = if !inside(&problem.hole, p1) || !inside(&problem.hole, p2) {
+            false
         } else {
-	    true
+            true
         };
-	if ok {
+        if ok {
             let mut i = 0;
             let l = problem.hole.len();
             while i < l {
@@ -284,17 +202,172 @@ fn solve(problem: &Problem) -> Option<Vec<[i32; 2]>> {
                 i += 1;
             }
         }
-	if !ok {
-	    valid.remove(&edge.0);
-	    valid.remove(&edge.1);
-	}
+        if !ok {
+            valid.remove(&edge.0);
+            valid.remove(&edge.1);
+        }
     }
-    if let Some(res) = place_vertice(problem, valid, x, y, min_x, max_x, min_y, max_y) {
-	return Some(res);
-    }
-    // Otherwise, place all of them
+    let dislikes = calc_dislikes(&problem, &valid);
+    let constrainedness = calc_constrainedness(&problem, &valid);
+    q.push(Thing {
+        problem: problem.clone(),
+        verts: valid,
+        x,
+        y,
+        dislikes,
+        constrainedness,
+    });
+
+    // Also add one where nothing is placed yet
     let v = HashMap::new();
-    place_vertice(problem, v, x, y, min_x, max_x, min_y, max_y)
+    let constrainedness = calc_constrainedness(&problem, &v);
+    q.push(Thing {
+        problem: problem.clone(),
+        verts: v,
+        x,
+        y,
+        dislikes: 0,
+        constrainedness,
+    });
+
+    while let Some(t) = q.pop() {
+        let Thing {
+            problem,
+            verts,
+            x: orig_x,
+            y: orig_y,
+            dislikes,
+            constrainedness,
+        } = t;
+        //	println!("{}, {:?}", dislikes, verts);
+        let num = verts.len();
+        if num == problem.figure.vertices.len() {
+            for (a, b) in &problem.figure.edges {
+                let p1 = problem.figure.vertices[*a];
+                let p2 = problem.figure.vertices[*b];
+                let d = (p1[0] - p2[0]) * (p1[0] - p2[0]) + (p1[1] - p2[1]) * (p1[1] - p2[1]);
+                let pp1 = verts[a];
+                let pp2 = verts[b];
+                let dd =
+                    (pp1[0] - pp2[0]) * (pp1[0] - pp2[0]) + (pp1[1] - pp2[1]) * (pp1[1] - pp2[1]);
+                let eps = 1000000.0 * ((d as f32 / dd as f32) - 1.0).abs();
+                println!("{}, {}, {}, {}, {}", d, dd, eps, problem.epsilon, dislikes);
+            }
+            println!("all successfully placed! {:?}", verts);
+            let mut v = vec![];
+            for i in 0..num {
+                v.push(verts[&i]);
+            }
+            return Some(v);
+        }
+        let ix = constrainedness.0;
+        let hole = problem.hole.clone();
+        let mut x = orig_x;
+        loop {
+            x += 1;
+            if x > max_x {
+                x = min_x
+            }
+            if x == orig_x {
+                break;
+            }
+            let mut y = orig_y;
+            loop {
+                y += 1;
+                if y > max_y {
+                    y = min_y
+                }
+                if y == orig_y {
+                    break;
+                }
+                let point = Point {
+                    x: x as f32,
+                    y: y as f32,
+                };
+                // Is the point inside?
+                if !inside(&hole, point) {
+                    continue;
+                }
+                // Are all placed edges inside?
+                // Are all placed edges within the constraint?
+                let mut ok = true;
+                for (a, b) in &problem.figure.edges {
+                    // Only check the new edges enabled by this point
+                    if (*a == ix || verts.contains_key(a)) && (*b == ix || verts.contains_key(b)) {
+                        let p1 = problem.figure.vertices[*a];
+                        let p2 = problem.figure.vertices[*b];
+                        let d =
+                            (p1[0] - p2[0]) * (p1[0] - p2[0]) + (p1[1] - p2[1]) * (p1[1] - p2[1]);
+                        let pp1 = if *a == ix {
+                            point
+                        } else {
+                            let [x, y] = verts[a];
+                            Point {
+                                x: x as f32,
+                                y: y as f32,
+                            }
+                        };
+                        let pp2 = if *b == ix {
+                            point
+                        } else {
+                            let [x, y] = verts[b];
+                            Point {
+                                x: x as f32,
+                                y: y as f32,
+                            }
+                        };
+                        let dd = (pp1[0] - pp2[0]) * (pp1[0] - pp2[0])
+                            + (pp1[1] - pp2[1]) * (pp1[1] - pp2[1]);
+                        let eps = 1000000.0 * ((dd as f32 / d as f32) - 1.0).abs();
+                        if eps as i32 > problem.epsilon {
+                            ok = false;
+                            break;
+                        }
+                        // check intersections
+                        let mut i = 0;
+                        let l = problem.hole.len();
+                        while i < l {
+                            let j = (i + 1) % l;
+                            if intersects((pp1, pp2), (problem.hole[i], problem.hole[j])) {
+                                ok = false;
+                                break;
+                            }
+                            i += 1;
+                        }
+                        // check that the whole line is inside (there must be a fast and correct way to do this)
+                        // This is not really 100% correct
+                        for i in 0..10 {
+                            let dir = [pp2[0] - pp1[0], pp2[1] - pp1[1]];
+                            let r = i as f32;
+                            let pppp = Point {
+                                x: pp1[0] + (r * dir[0]) / 1000.0,
+                                y: pp1[1] + (r * dir[1]) / 1000.0,
+                            };
+                            if !inside(&problem.hole, pppp) {
+                                ok = false;
+                                break;
+                            }
+                        }
+                    }
+                }
+                if ok {
+                    let mut v = verts.clone();
+                    v.insert(ix, [point.x as i32, point.y as i32]);
+                    let new_dislikes = calc_dislikes(&problem, &v);
+                    let new_constrainedness = calc_constrainedness(&problem, &v);
+                    q.push(Thing {
+                        problem: problem.clone(),
+                        verts: v,
+                        x,
+                        y,
+                        dislikes: new_dislikes,
+                        constrainedness: new_constrainedness,
+                    });
+                }
+            }
+        }
+    }
+    None
 }
 
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
