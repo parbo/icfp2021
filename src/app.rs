@@ -321,7 +321,7 @@ impl PolygonApp {
                 if let Some(lowest) = self.solution.lowest_dislikes {
                     if dislikes < lowest {
                         self.solution.lowest_dislikes = Some(dislikes);
-			self.pose = verts.clone();
+                        self.pose = verts.clone();
                     }
                 } else {
                     self.solution.lowest_dislikes = Some(dislikes);
@@ -329,9 +329,9 @@ impl PolygonApp {
             }
             // let num_queued = self.solution.queue.len();
             for ix in 0..problem.figure.vertices.len() {
-		if ix != constrainedness.0 {
-		    continue;
-		}
+                if ix != constrainedness.0 {
+                    continue;
+                }
                 let mut x = orig_x;
                 loop {
                     x += 1;
@@ -474,7 +474,7 @@ impl PolygonApp {
             if iter > iterations {
                 if !self.solution.lowest_dislikes.is_some() {
                     self.pose = verts.clone();
-		}
+                }
                 println!("solved {} iterations, {:?}", iterations, self.pose);
                 return;
             }
@@ -568,7 +568,10 @@ impl epi::App for PolygonApp {
                 ui.set_enabled(self.problem.is_some());
                 ui.checkbox(&mut self.solving, "Solve");
                 ui.label(format!("Iterations: {}", self.solution.iterations));
-                ui.label(format!("Dislikes: {}", self.solution.lowest_dislikes.unwrap_or(-1)));
+                ui.label(format!(
+                    "Dislikes: {}",
+                    self.solution.lowest_dislikes.unwrap_or(-1)
+                ));
                 ui.label(format!("Solved: {}", self.solution.solved));
                 if ui.button("Save").clicked() {
                     let out_filename = self.filename.to_owned() + ".solution.json";
@@ -609,7 +612,8 @@ impl epi::App for PolygonApp {
                         let opp2 = [op2.x as i32, op2.y as i32];
                         let p1 = self.pose.get(&edge.0).unwrap_or(&opp1);
                         let p2 = self.pose.get(&edge.1).unwrap_or(&opp2);
-			let edge_valid = self.pose.contains_key(&edge.0) && self.pose.contains_key(&edge.1);
+                        let edge_valid =
+                            self.pose.contains_key(&edge.0) && self.pose.contains_key(&edge.1);
                         let pp1 = Point {
                             x: p1[0] as f32,
                             y: p1[1] as f32,
@@ -624,7 +628,7 @@ impl epi::App for PolygonApp {
                         let label = format!(
                             "{:?}, {}, {}, {}, {}, {}",
                             problem.figure.edges[i], edge_valid, d, dd, eps, problem.epsilon
-	                        );
+                        );
                         if ui.add(egui::SelectableLabel::new(checked, label)).clicked() {
                             if selected.contains(&i) {
                                 selected.remove(&i);
@@ -742,10 +746,11 @@ impl epi::App for PolygonApp {
                             }
                             i += 1;
                         }
-			let edge_valid = self.pose.contains_key(&edge.0) && self.pose.contains_key(&edge.1);
-			if !edge_valid {
-			    stroke = invalid_stroke;
-			}
+                        let edge_valid =
+                            self.pose.contains_key(&edge.0) && self.pose.contains_key(&edge.1);
+                        if !edge_valid {
+                            stroke = invalid_stroke;
+                        }
                         shapes.push(egui::Shape::line(points, stroke));
                     }
                 }
