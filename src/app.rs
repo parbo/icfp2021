@@ -472,8 +472,8 @@ impl PolygonApp {
             iter += 1;
             self.solution.iterations += 1;
             if iter > iterations {
-                if !self.solution.lowest_dislikes.is_some() {
-                    self.pose = verts.clone();
+                if self.solution.lowest_dislikes.is_none() {
+                    self.pose = verts;
                 }
                 println!("solved {} iterations, {:?}", iterations, self.pose);
                 return;
