@@ -47,7 +47,7 @@ fn write_solution_to_file<P: AsRef<Path>>(path: P, verts: &[Point]) -> Result<()
     let vertices: Vec<_> = verts.iter().map(|p| [p.x as i32, p.y as i32]).collect();
     let p = Pose { vertices };
     serde_json::to_writer(&file, &p)?;
-    return Ok(());
+    Ok(())
 }
 
 fn intersects(a: (Point, Point), b: (Point, Point)) -> bool {
@@ -70,11 +70,11 @@ fn intersects(a: (Point, Point), b: (Point, Point)) -> bool {
             }
         }
     }
-    return false;
+    false
 }
 
 fn inside(poly: &[egui::Pos2], p: egui::Pos2) -> bool {
-    if poly.len() == 0 {
+    if poly.is_empty() {
         return false;
     }
     let mut i = 0;
@@ -96,7 +96,7 @@ fn inside(poly: &[egui::Pos2], p: egui::Pos2) -> bool {
         j = i;
         i += 1;
     }
-    return c;
+    c
 }
 
 fn place_vertice(
@@ -132,12 +132,12 @@ fn place_vertice(
     let hole = problem.hole.clone();
     for x in min_x..=max_x {
         for y in min_y..=max_y {
-            let p = Point {
+            let point = Point {
                 x: x as f32,
                 y: y as f32,
             };
             // Is the point inside?
-            if !inside(&hole, p) {
+            if !inside(&hole, point) {
                 continue;
             }
             // Are all placed edges inside?
@@ -150,7 +150,7 @@ fn place_vertice(
                     let p2 = problem.figure.vertices[*b];
                     let d = (p1[0] - p2[0]) * (p1[0] - p2[0]) + (p1[1] - p2[1]) * (p1[1] - p2[1]);
                     let pp1 = if *a == ix {
-                        p
+                        point
                     } else {
                         let [x, y] = verts[*a];
                         Point {
@@ -159,7 +159,7 @@ fn place_vertice(
                         }
                     };
                     let pp2 = if *b == ix {
-                        p
+                        point
                     } else {
                         let [x, y] = verts[*b];
                         Point {
@@ -203,7 +203,7 @@ fn place_vertice(
             }
             if ok {
                 let mut v = verts.clone();
-                v.push([p.x as i32, p.y as i32]);
+                v.push([point.x as i32, point.y as i32]);
                 if let Some(res) = place_vertice(problem, memo, v, min_x, max_x, min_y, max_y) {
                     memo.insert(verts, Some(res.clone()));
                     return Some(res);
@@ -212,7 +212,7 @@ fn place_vertice(
         }
     }
     memo.insert(verts, None);
-    return None;
+    None
 }
 
 fn solve(problem: &Problem) -> Option<Vec<[i32; 2]>> {
@@ -328,7 +328,7 @@ impl epi::App for TemplateApp {
                 }
                 if ui.button("Save").clicked() {
                     let out_filename = filename.to_owned() + ".solution.json";
-                    if let Ok(_) = write_solution_to_file(&out_filename, &pose) {
+                    if write_solution_to_file(&out_filename, &pose).is_ok() {
                         println!("saved solution!");
                     }
                 }
@@ -429,7 +429,7 @@ impl epi::App for TemplateApp {
                     shapes.push(egui::Shape::closed_line(points, hole_stroke));
                     // Draw pose
                     for ix in 0..problem.figure.edges.len() {
-                        if selected.len() != 0 && !selected.contains(&ix) {
+                        if !selected.is_empty() && !selected.contains(&ix) {
                             continue;
                         }
                         let edge = problem.figure.edges[ix];
