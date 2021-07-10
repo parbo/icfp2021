@@ -322,7 +322,7 @@ impl PolygonApp {
                 }
                 if let Some(lowest) = self.solution.lowest_dislikes {
                     if dislikes < lowest {
-			println!("New best! {:?}, {}", verts, dislikes);
+                        println!("New best! {:?}, {}", verts, dislikes);
                         self.solution.lowest_dislikes = Some(dislikes);
                         self.best_pose = verts.clone();
                     }
@@ -491,7 +491,7 @@ impl Default for PolygonApp {
             pose: HashMap::new(),
             selected: HashSet::new(),
             solving: false,
-	    best_pose: HashMap::new(),
+            best_pose: HashMap::new(),
         }
     }
 }
