@@ -2,6 +2,7 @@ use eframe::{egui, epi};
 //extern crate env_file;
 
 use itertools::Itertools;
+use rand::prelude::*;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
@@ -128,25 +129,22 @@ struct Thing {
 impl Ord for Thing {
     fn cmp(&self, other: &Thing) -> Ordering {
         if self.num == self.verts.len() {
-            other
-                .dislikes
-                .cmp(&self.dislikes)
-                .then_with(|| self.x.cmp(&other.x))
-                .then_with(|| self.y.cmp(&other.y))
+            other.dislikes.cmp(&self.dislikes)
+            // .then_with(|| self.x.cmp(&other.x))
+            // .then_with(|| self.y.cmp(&other.y))
         } else {
             let c_factor = 10;
             let l_factor = 1000;
-            let d_factor = 1;
+            let d_factor = 0;
             let self_score = self.constrainedness.1 * c_factor
                 + self.verts.len() as i32 * l_factor
                 + 100000 / (self.dislikes + 1) * d_factor;
             let other_score = other.constrainedness.1 * c_factor
                 + other.verts.len() as i32 * l_factor
                 + 100000 / (other.dislikes + 1) * d_factor;
-            self_score
-                .cmp(&other_score)
-                .then_with(|| self.x.cmp(&other.x))
-                .then_with(|| self.y.cmp(&other.y))
+            self_score.cmp(&other_score)
+            // .then_with(|| self.x.cmp(&other.x))
+            // .then_with(|| self.y.cmp(&other.y))
         }
     }
 }
@@ -308,8 +306,14 @@ impl PolygonApp {
         // println!("solving: {} iterations", iterations);
         let mut iter = 0;
         let problem = self.problem.as_ref().unwrap();
-        let candidates: Vec<_> = (self.solution.min_x..=self.solution.max_x)
-            .cartesian_product(self.solution.min_y..=self.solution.max_y)
+        let mut rng = rand::thread_rng();
+        let mut x_range: Vec<_> = (self.solution.min_x..=self.solution.max_x).collect();
+        x_range.shuffle(&mut rng);
+        let mut y_range: Vec<_> = (self.solution.min_y..=self.solution.max_y).collect();
+        y_range.shuffle(&mut rng);
+        let candidates: Vec<_> = x_range
+            .into_iter()
+            .cartesian_product(y_range.into_iter())
             .cartesian_product(0..problem.figure.vertices.len())
             .collect();
         while let Some(t) = self.solution.queue.pop() {
