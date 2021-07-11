@@ -82,7 +82,9 @@ fn intersects(a: (Point, Point), b: (Point, Point)) -> bool {
             if ud != 0.0 {
                 let u = uq as f32 / ud as f32;
                 if (0.0..=1.0).contains(&u) {
-                    return true;
+                    // Check if only touching
+                    return !(((u - 0.0).abs() < f32::EPSILON || (u - 1.0).abs() < f32::EPSILON)
+                        && ((t - 0.0).abs() < f32::EPSILON || (t - 1.0).abs() < f32::EPSILON));
                 }
             }
         }
@@ -331,6 +333,9 @@ impl PolygonApp {
                 if dislikes == 0 {
                     self.solving = false;
                     self.solution.solved = true;
+                    self.best_pose = verts.clone();
+                    self.pose = verts;
+                    println!("solved!");
                     return;
                 }
                 if let Some(lowest) = self.solution.lowest_dislikes {
@@ -354,8 +359,10 @@ impl PolygonApp {
                         x: *x as f32,
                         y: *y as f32,
                     };
+                    // println!("verts: {:?}, point: {:?}", verts, point);
                     // Is the point inside?
                     if !inside(&problem.hole, point) {
+                        // println!("point not inside");
                         return None;
                     }
                     // Are all placed edges inside?
@@ -394,6 +401,7 @@ impl PolygonApp {
                                 1000000.0 * ((new_distance as f32 / distance as f32) - 1.0).abs();
                             if eps as i32 > problem.epsilon {
                                 ok = false;
+                                // println!("edge too long/short: {}, {}, {}, {}", distance, new_distance, eps, problem.epsilon);
                                 break;
                             }
                             // check intersections
@@ -402,6 +410,7 @@ impl PolygonApp {
                             while ix < len {
                                 let jx = (ix + 1) % len;
                                 if intersects((pp1, pp2), (problem.hole[ix], problem.hole[jx])) {
+                                    // println!("edge intersects with hole");
                                     ok = false;
                                     break;
                                 }
@@ -433,6 +442,7 @@ impl PolygonApp {
                     v.insert(*ix, [point.x as i32, point.y as i32]);
                     let new_dislikes = calc_dislikes(&problem, &v);
                     let new_constrainedness = calc_constrainedness(&problem, &v);
+                    // println!("insert new thing: {:?}", v);
                     let t = Thing {
                         num: problem.figure.vertices.len(),
                         verts: v,
