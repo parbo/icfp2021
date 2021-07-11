@@ -147,9 +147,11 @@ impl Ord for Thing {
             //     + other.edge_length * e_factor
             //     + 100000 / (other.dislikes + 1) * d_factor;
             // self_score.cmp(&other_score)
-	    self.verts.len().cmp(&other.verts.len())
-		.then_with(|| self.edge_length.cmp(&other.edge_length))
-		.then_with(|| other.dislikes.cmp(&self.dislikes))
+            self.verts
+                .len()
+                .cmp(&other.verts.len())
+                .then_with(|| self.edge_length.cmp(&other.edge_length))
+                .then_with(|| other.dislikes.cmp(&self.dislikes))
         }
     }
 }
