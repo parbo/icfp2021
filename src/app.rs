@@ -133,24 +133,23 @@ impl Ord for Thing {
     fn cmp(&self, other: &Thing) -> Ordering {
         if self.num == self.verts.len() {
             other.dislikes.cmp(&self.dislikes)
-            // .then_with(|| self.x.cmp(&other.x))
-            // .then_with(|| self.y.cmp(&other.y))
         } else {
-            let c_factor = 10;
-            let l_factor = 1000;
-            let d_factor = 0;
-            let e_factor = 0;
-            let self_score = self.constrainedness.1 * c_factor
-                + self.verts.len() as i32 * l_factor
-                + self.edge_length * e_factor
-                + 100000 / (self.dislikes + 1) * d_factor;
-            let other_score = other.constrainedness.1 * c_factor
-                + other.verts.len() as i32 * l_factor
-                + other.edge_length * e_factor
-                + 100000 / (other.dislikes + 1) * d_factor;
-            self_score.cmp(&other_score)
-            // .then_with(|| self.x.cmp(&other.x))
-            // .then_with(|| self.y.cmp(&other.y))
+            // let c_factor = 10;
+            // let l_factor = 1000;
+            // let d_factor = 0;
+            // let e_factor = 0;
+            // let self_score = self.constrainedness.1 * c_factor
+            //     + self.verts.len() as i32 * l_factor
+            //     + self.edge_length * e_factor
+            //     + 100000 / (self.dislikes + 1) * d_factor;
+            // let other_score = other.constrainedness.1 * c_factor
+            //     + other.verts.len() as i32 * l_factor
+            //     + other.edge_length * e_factor
+            //     + 100000 / (other.dislikes + 1) * d_factor;
+            // self_score.cmp(&other_score)
+	    self.verts.len().cmp(&other.verts.len())
+		.then_with(|| self.edge_length.cmp(&other.edge_length))
+		.then_with(|| other.dislikes.cmp(&self.dislikes))
         }
     }
 }
