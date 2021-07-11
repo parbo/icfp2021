@@ -126,6 +126,7 @@ struct Thing {
     y: i32,
     dislikes: i32,
     constrainedness: (usize, i32),
+    edge_length: i32,
 }
 
 impl Ord for Thing {
@@ -138,11 +139,14 @@ impl Ord for Thing {
             let c_factor = 10;
             let l_factor = 1000;
             let d_factor = 0;
+            let e_factor = 0;
             let self_score = self.constrainedness.1 * c_factor
                 + self.verts.len() as i32 * l_factor
+                + self.edge_length * e_factor
                 + 100000 / (self.dislikes + 1) * d_factor;
             let other_score = other.constrainedness.1 * c_factor
                 + other.verts.len() as i32 * l_factor
+                + other.edge_length * e_factor
                 + 100000 / (other.dislikes + 1) * d_factor;
             self_score.cmp(&other_score)
             // .then_with(|| self.x.cmp(&other.x))
@@ -161,18 +165,35 @@ impl PartialOrd for Thing {
 fn calc_constrainedness(problem: &Problem, pose: &HashMap<usize, [i32; 2]>) -> (usize, i32) {
     let mut cnt = HashMap::new();
     for (a, b) in &problem.figure.edges {
+        let pa = problem.figure.vertices[*a];
+        let pb = problem.figure.vertices[*b];
+        let edge_length = ((pa.x - pb.x) * (pa.x - pb.x) + (pa.y - pb.y) * (pa.y - pb.y)) as i32;
         if !pose.contains_key(a) {
             let inc = if pose.contains_key(b) { 10 } else { 1 };
-            *cnt.entry(*a).or_insert(0) += inc;
+            *cnt.entry(*a).or_insert(0) += inc + edge_length;
         }
         if !pose.contains_key(b) {
             let inc = if pose.contains_key(a) { 10 } else { 1 };
-            *cnt.entry(*b).or_insert(0) += inc;
+            *cnt.entry(*b).or_insert(0) += inc + edge_length;
         }
     }
     cnt.into_iter()
         .max_by(|x, y| x.1.cmp(&y.1))
         .unwrap_or((0, 0))
+}
+
+fn calc_edge_length(problem: &Problem, pose: &HashMap<usize, [i32; 2]>) -> i32 {
+    let mut tot = 0;
+    for (a, b) in &problem.figure.edges {
+        if pose.contains_key(a) && pose.contains_key(b) {
+            let pa = problem.figure.vertices[*a];
+            let pb = problem.figure.vertices[*b];
+            let edge_length =
+                ((pa.x - pb.x) * (pa.x - pb.x) + (pa.y - pb.y) * (pa.y - pb.y)) as i32;
+            tot += edge_length;
+        }
+    }
+    tot
 }
 
 fn calc_dislikes(problem: &Problem, pose: &HashMap<usize, [i32; 2]>) -> i32 {
@@ -281,6 +302,7 @@ impl PolygonApp {
             }
             let dislikes = calc_dislikes(&problem, &valid);
             let constrainedness = calc_constrainedness(&problem, &valid);
+            let edge_length = calc_edge_length(&problem, &valid);
             self.solution.queue.push(Thing {
                 num: problem.figure.vertices.len(),
                 verts: valid,
@@ -288,12 +310,14 @@ impl PolygonApp {
                 y,
                 dislikes,
                 constrainedness,
+                edge_length,
             });
         }
 
         // Also add one where nothing is placed yet
         let v = HashMap::new();
         let constrainedness = calc_constrainedness(&problem, &v);
+        let edge_length = calc_edge_length(&problem, &v);
         self.solution.queue.push(Thing {
             num: problem.figure.vertices.len(),
             verts: v,
@@ -301,6 +325,7 @@ impl PolygonApp {
             y,
             dislikes: 0,
             constrainedness,
+            edge_length,
         });
     }
 
@@ -326,6 +351,7 @@ impl PolygonApp {
                 y: _orig_y,
                 dislikes,
                 constrainedness,
+                edge_length: _,
             } = t;
             // println!("{}, {:?}", dislikes, verts);
             let num = verts.len();
@@ -444,6 +470,7 @@ impl PolygonApp {
                     v.insert(*ix, [point.x as i32, point.y as i32]);
                     let new_dislikes = calc_dislikes(&problem, &v);
                     let new_constrainedness = calc_constrainedness(&problem, &v);
+                    let new_edge_length = calc_edge_length(&problem, &v);
                     // println!("insert new thing: {:?}", v);
                     let t = Thing {
                         num: problem.figure.vertices.len(),
@@ -452,6 +479,7 @@ impl PolygonApp {
                         y: point.y as i32,
                         dislikes: new_dislikes,
                         constrainedness: new_constrainedness,
+                        edge_length: new_edge_length,
                     };
                     self.solution.queue.push(t);
                 }
