@@ -2,7 +2,7 @@ use eframe::{egui, epi};
 //extern crate env_file;
 
 use itertools::Itertools;
-use rand::prelude::*;
+// use rand::prelude::*;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
@@ -329,14 +329,25 @@ impl PolygonApp {
         // println!("solving: {} iterations", iterations);
         let mut iter = 0;
         let problem = self.problem.as_ref().unwrap();
-        let mut rng = rand::thread_rng();
-        let mut x_range: Vec<_> = (self.solution.min_x..=self.solution.max_x).collect();
-        x_range.shuffle(&mut rng);
-        let mut y_range: Vec<_> = (self.solution.min_y..=self.solution.max_y).collect();
-        y_range.shuffle(&mut rng);
-        let candidates: Vec<_> = x_range
+        // let mut rng = rand::thread_rng();
+        let x_range: Vec<_> = (self.solution.min_x..=self.solution.max_x).collect();
+        let y_range: Vec<_> = (self.solution.min_y..=self.solution.max_y).collect();
+        let mut positions: Vec<_> = x_range
             .into_iter()
             .cartesian_product(y_range.into_iter())
+            .collect();
+        // Sort the positions on dislikes
+        positions.sort_by(|a, b| {
+            let mut posea = HashMap::new();
+            let mut poseb = HashMap::new();
+            posea.insert(0, [a.0, a.1]);
+            poseb.insert(0, [b.0, b.1]);
+            let da = calc_dislikes(&problem, &posea);
+            let db = calc_dislikes(&problem, &poseb);
+            da.cmp(&db)
+        });
+        let candidates: Vec<_> = positions
+            .into_iter()
             .cartesian_product(0..problem.figure.vertices.len())
             .collect();
         while let Some(t) = self.solution.queue.pop() {
