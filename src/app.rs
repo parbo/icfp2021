@@ -345,7 +345,9 @@ impl PolygonApp {
                         self.best_pose = verts.clone();
                     }
                 } else {
+                    println!("First solution! {:?}, {}", verts, dislikes);
                     self.solution.lowest_dislikes = Some(dislikes);
+                    self.best_pose = verts.clone();
                 }
             }
             // let num_queued = self.solution.queue.len();
