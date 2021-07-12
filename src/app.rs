@@ -197,7 +197,11 @@ fn calc_dislikes(problem: &Problem, pose: &HashMap<usize, [i32; 2]>) -> i32 {
 }
 
 fn find_cycles(problem: &Problem, ix: usize, graph: Vec<usize>) -> Vec<Vec<usize>> {
-    //    println!("find cycle: {}, {:?}", ix, graph);
+    //println!("find cycle: {}, {:?}", ix, graph);
+    // Only find smallish cycles
+    if graph.len() > 6 {
+        return vec![];
+    }
     let expand = graph.last().unwrap();
     if graph.len() > 1 && *expand == ix {
         return vec![graph];
@@ -367,21 +371,24 @@ impl PolygonApp {
         }
 
         // Also add one where nothing is placed yet
-        let v = HashMap::new();
-        let constrainedness = calc_constrainedness(&problem, &v);
-        let edge_length = calc_edge_length(&problem, &v);
+        let valid = HashMap::new();
+        let constrainedness = calc_constrainedness(&problem, &valid);
+        let edge_length = calc_edge_length(&problem, &valid);
         self.solution.queue.push(Thing {
             num: problem.figure.vertices.len(),
-            verts: v,
+            verts: valid,
             x,
             y,
             dislikes: 0,
             constrainedness,
             edge_length,
         });
+        println!("find cycles for {} vertices", problem.figure.vertices.len());
         for i in 0..problem.figure.vertices.len() {
+            println!("find cycles for vertex {}", i);
             let g = vec![i];
             let cycles = find_cycles(problem, i, g);
+            println!("found {} cycles", cycles.len());
             let mut smallest = None;
             for cycle in &cycles {
                 if cycle.len() > 3 {
@@ -406,7 +413,8 @@ impl PolygonApp {
                         unique.insert(c);
                         for i in 0..(cycle.len() - 1) {
                             let pa = problem.figure.vertices[i];
-                            let pb = problem.figure.vertices[i + 1];
+                            let pb =
+                                problem.figure.vertices[(i + 1) % problem.figure.vertices.len()];
                             let edge_length = ((pa.x - pb.x) * (pa.x - pb.x)
                                 + (pa.y - pb.y) * (pa.y - pb.y))
                                 as i32;
