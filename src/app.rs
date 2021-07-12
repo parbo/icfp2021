@@ -147,16 +147,13 @@ impl PartialOrd for Thing {
 fn calc_constrainedness(problem: &Problem, pose: &HashMap<usize, [i32; 2]>) -> Vec<(usize, i32)> {
     let mut cnt = HashMap::new();
     for (a, b) in &problem.figure.edges {
-        let pa = problem.figure.vertices[*a];
-        let pb = problem.figure.vertices[*b];
-        let edge_length = ((pa.x - pb.x) * (pa.x - pb.x) + (pa.y - pb.y) * (pa.y - pb.y)) as i32;
         if !pose.contains_key(a) {
-            let inc = if pose.contains_key(b) { 1 } else { 0 };
-            *cnt.entry(*a).or_insert(0) += inc * edge_length;
+            let inc = if pose.contains_key(b) { 10 } else { 1 };
+            *cnt.entry(*a).or_insert(0) += inc;
         }
         if !pose.contains_key(b) {
-            let inc = if pose.contains_key(a) { 1 } else { 0 };
-            *cnt.entry(*b).or_insert(0) += inc * edge_length;
+            let inc = if pose.contains_key(a) { 10 } else { 1 };
+            *cnt.entry(*b).or_insert(0) += inc;
         }
     }
     let mut v: Vec<_> = cnt.into_iter().collect();
