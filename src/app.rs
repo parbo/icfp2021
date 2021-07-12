@@ -199,7 +199,7 @@ fn find_cycles(problem: &Problem, ix: usize, graph: Vec<usize>) -> Vec<Vec<usize
     //    println!("find cycle: {}, {:?}", ix, graph);
     let expand = graph.last().unwrap();
     if graph.len() > 1 && *expand == ix {
-	return vec![graph];
+        return vec![graph];
     }
     let connected: Vec<_> = problem
         .figure
@@ -237,6 +237,7 @@ struct Solution {
     seen: HashSet<Vec<[i32; 2]>>,
     lowest_dislikes: Option<i32>,
     candidates: Vec<((i32, i32), usize)>,
+    longest_edge_in_cycle: HashMap<usize, i32>,
 }
 
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
@@ -317,6 +318,7 @@ impl PolygonApp {
             seen: HashSet::new(),
             lowest_dislikes: None,
             candidates,
+            longest_edge_in_cycle: HashMap::new(),
         };
         let x = self.solution.min_x + (self.solution.max_x - self.solution.min_x) / 2;
         let y = self.solution.min_y + (self.solution.max_y - self.solution.min_y) / 2;
@@ -379,33 +381,46 @@ impl PolygonApp {
         for i in 0..problem.figure.vertices.len() {
             let g = vec![i];
             let cycles = find_cycles(problem, i, g);
-	    let mut smallest = None;
-	    for cycle in &cycles {
-		if cycle.len() > 3 {
-		    if let Some(s) = smallest {
-			if cycle.len() < s {
-			    smallest = Some(cycle.len());
-			}
-		    } else {
-			smallest = Some(cycle.len());
-		    }
-		}
-	    }
-	    let mut unique : HashSet<Vec<usize>> = HashSet::new();
-	    for cycle in &cycles {
-		let cl = cycle.len();
-		if Some(cl) == smallest {
-		    let c = cycle.to_vec();
-		    let mut rev = cycle.to_vec();
-		    rev.reverse();
-		    if !unique.contains(&c) && !unique.contains(&rev) {
-			unique.insert(c);
-		    }
-		}
-	    }
-	    for cycle in unique {
-		println!("vertex {} has smallest cycle {:?}", i, cycle);
-	    }
+            let mut smallest = None;
+            for cycle in &cycles {
+                if cycle.len() > 3 {
+                    if let Some(s) = smallest {
+                        if cycle.len() < s {
+                            smallest = Some(cycle.len());
+                        }
+                    } else {
+                        smallest = Some(cycle.len());
+                    }
+                }
+            }
+            let mut longest_edge = 0;
+            let mut unique: HashSet<Vec<usize>> = HashSet::new();
+            for cycle in &cycles {
+                let cl = cycle.len();
+                if Some(cl) == smallest {
+                    let c = cycle.to_vec();
+                    let mut rev = cycle.to_vec();
+                    rev.reverse();
+                    if !unique.contains(&c) && !unique.contains(&rev) {
+                        unique.insert(c);
+                        for i in 0..(cycle.len() - 1) {
+                            let pa = problem.figure.vertices[i];
+                            let pb = problem.figure.vertices[i + 1];
+                            let edge_length = ((pa.x - pb.x) * (pa.x - pb.x)
+                                + (pa.y - pb.y) * (pa.y - pb.y))
+                                as i32;
+                            if edge_length > longest_edge {
+                                longest_edge = edge_length;
+                            }
+                        }
+                    }
+                }
+            }
+            self.solution.longest_edge_in_cycle.insert(i, longest_edge);
+            for cycle in unique {
+                println!("vertex {} has smallest cycle {:?}", i, cycle);
+            }
+            println!("vertex {} has longest edge {}", i, longest_edge);
         }
     }
 
@@ -628,6 +643,7 @@ impl Default for PolygonApp {
                 seen: HashSet::new(),
                 lowest_dislikes: None,
                 candidates: vec![],
+                longest_edge_in_cycle: HashMap::new(),
             },
             pose: HashMap::new(),
             selected: HashSet::new(),
