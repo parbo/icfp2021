@@ -195,6 +195,37 @@ fn calc_dislikes(problem: &Problem, pose: &HashMap<usize, [i32; 2]>) -> i32 {
     d_sum
 }
 
+fn find_cycles(problem: &Problem, ix: usize, graph: Vec<usize>) -> Vec<Vec<usize>> {
+    //    println!("find cycle: {}, {:?}", ix, graph);
+    let expand = graph.last().unwrap();
+    if graph.len() > 1 && *expand == ix {
+	return vec![graph];
+    }
+    let connected: Vec<_> = problem
+        .figure
+        .edges
+        .iter()
+        .filter_map(|(a, b)| {
+            if a == expand {
+                Some(b)
+            } else if b == expand {
+                Some(a)
+            } else {
+                None
+            }
+        })
+        .collect();
+    let mut cycles = vec![];
+    for i in connected {
+        if !graph[1..].contains(&i) {
+            let mut g = graph.clone();
+            g.push(*i);
+            cycles.extend(find_cycles(problem, ix, g));
+        }
+    }
+    cycles
+}
+
 struct Solution {
     queue: BinaryHeap<Thing>,
     min_x: i32,
@@ -345,6 +376,37 @@ impl PolygonApp {
             constrainedness,
             edge_length,
         });
+        for i in 0..problem.figure.vertices.len() {
+            let g = vec![i];
+            let cycles = find_cycles(problem, i, g);
+	    let mut smallest = None;
+	    for cycle in &cycles {
+		if cycle.len() > 3 {
+		    if let Some(s) = smallest {
+			if cycle.len() < s {
+			    smallest = Some(cycle.len());
+			}
+		    } else {
+			smallest = Some(cycle.len());
+		    }
+		}
+	    }
+	    let mut unique : HashSet<Vec<usize>> = HashSet::new();
+	    for cycle in &cycles {
+		let cl = cycle.len();
+		if Some(cl) == smallest {
+		    let c = cycle.to_vec();
+		    let mut rev = cycle.to_vec();
+		    rev.reverse();
+		    if !unique.contains(&c) && !unique.contains(&rev) {
+			unique.insert(c);
+		    }
+		}
+	    }
+	    for cycle in unique {
+		println!("vertex {} has smallest cycle {:?}", i, cycle);
+	    }
+        }
     }
 
     fn solve(&mut self, iterations: usize) {
