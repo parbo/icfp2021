@@ -359,11 +359,15 @@ impl PolygonApp {
                         println!("New best! {:?}, {}", verts, dislikes);
                         self.solution.lowest_dislikes = Some(dislikes);
                         self.best_pose = verts.clone();
+			self.save_best();
+			return;
                     }
                 } else {
                     println!("First solution! {:?}, {}", verts, dislikes);
                     self.solution.lowest_dislikes = Some(dislikes);
                     self.best_pose = verts.clone();
+		    self.save_best();
+                    return;
                 }
             }
             // let num_queued = self.solution.queue.len();
@@ -484,6 +488,25 @@ impl PolygonApp {
         }
         self.solving = false;
     }
+
+    fn save_best(&self) {
+        let out_filename = self.filename.to_owned() + ".solution.json";
+        let mut pose = vec![];
+        let problem = self.problem.as_ref().unwrap();
+        for i in 0..problem.figure.vertices.len() {
+            if let Some(p) = self.best_pose.get(&i) {
+                pose.push(Point {
+                    x: p[0] as f32,
+                    y: p[1] as f32,
+                });
+            } else {
+                pose.push(problem.figure.vertices[i])
+            }
+        }
+        if write_solution_to_file(&out_filename, &pose).is_ok() {
+            println!("saved solution!");
+        }
+    }
 }
 
 impl Default for PolygonApp {
@@ -581,22 +604,7 @@ impl epi::App for PolygonApp {
                 ));
                 ui.label(format!("Solved: {}", self.solution.solved));
                 if ui.button("Save").clicked() {
-                    let out_filename = self.filename.to_owned() + ".solution.json";
-                    let mut pose = vec![];
-                    let problem = self.problem.as_ref().unwrap();
-                    for i in 0..problem.figure.vertices.len() {
-                        if let Some(p) = self.best_pose.get(&i) {
-                            pose.push(Point {
-                                x: p[0] as f32,
-                                y: p[1] as f32,
-                            });
-                        } else {
-                            pose.push(problem.figure.vertices[i])
-                        }
-                    }
-                    if write_solution_to_file(&out_filename, &pose).is_ok() {
-                        println!("saved solution!");
-                    }
+		    self.save_best();
                 }
             });
             let mut selected = self.selected.clone();
