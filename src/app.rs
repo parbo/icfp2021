@@ -121,8 +121,6 @@ fn inside(poly: &[egui::Pos2], p: egui::Pos2) -> bool {
 struct Thing {
     num: usize,
     verts: HashMap<usize, [i32; 2]>,
-    x: i32,
-    y: i32,
     dislikes: i32,
     constrainedness: Vec<(usize, i32)>,
     edge_length: i32,
@@ -362,8 +360,6 @@ impl PolygonApp {
             self.solution.queue.push(Thing {
                 num: problem.figure.vertices.len(),
                 verts: valid,
-                x,
-                y,
                 dislikes,
                 constrainedness,
                 edge_length,
@@ -377,8 +373,6 @@ impl PolygonApp {
         self.solution.queue.push(Thing {
             num: problem.figure.vertices.len(),
             verts: valid,
-            x,
-            y,
             dislikes: 0,
             constrainedness,
             edge_length,
@@ -441,8 +435,6 @@ impl PolygonApp {
             let Thing {
                 num: _wanted_num,
                 verts,
-                x: _orig_x,
-                y: _orig_y,
                 dislikes,
                 constrainedness: _,
                 edge_length: _,
@@ -599,8 +591,6 @@ impl PolygonApp {
                     let t = Thing {
                         num: problem.figure.vertices.len(),
                         verts: v,
-                        x: point.x as i32,
-                        y: point.y as i32,
                         dislikes: new_dislikes,
                         constrainedness: new_constrainedness,
                         edge_length: new_edge_length,
