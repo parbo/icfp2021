@@ -123,7 +123,7 @@ struct Thing {
     x: i32,
     y: i32,
     dislikes: i32,
-    constrainedness: (usize, i32),
+    constrainedness: Vec<(usize, i32)>,
     edge_length: i32,
 }
 
@@ -144,21 +144,24 @@ impl PartialOrd for Thing {
     }
 }
 
-fn calc_constrainedness(problem: &Problem, pose: &HashMap<usize, [i32; 2]>) -> (usize, i32) {
+fn calc_constrainedness(problem: &Problem, pose: &HashMap<usize, [i32; 2]>) -> Vec<(usize, i32)> {
     let mut cnt = HashMap::new();
     for (a, b) in &problem.figure.edges {
+        let pa = problem.figure.vertices[*a];
+        let pb = problem.figure.vertices[*b];
+        let edge_length = ((pa.x - pb.x) * (pa.x - pb.x) + (pa.y - pb.y) * (pa.y - pb.y)) as i32;
         if !pose.contains_key(a) {
-            let inc = if pose.contains_key(b) { 10 } else { 1 };
-            *cnt.entry(*a).or_insert(0) += inc;
+            let inc = if pose.contains_key(b) { 1 } else { 0 };
+            *cnt.entry(*a).or_insert(0) += inc * edge_length;
         }
         if !pose.contains_key(b) {
-            let inc = if pose.contains_key(a) { 10 } else { 1 };
-            *cnt.entry(*b).or_insert(0) += inc;
+            let inc = if pose.contains_key(a) { 1 } else { 0 };
+            *cnt.entry(*b).or_insert(0) += inc * edge_length;
         }
     }
-    cnt.into_iter()
-        .max_by(|x, y| x.1.cmp(&y.1))
-        .unwrap_or((0, 0))
+    let mut v: Vec<_> = cnt.into_iter().collect();
+    v.sort_by(|a, b| b.1.cmp(&a.1));
+    v
 }
 
 fn calc_edge_length(problem: &Problem, pose: &HashMap<usize, [i32; 2]>) -> i32 {
@@ -205,6 +208,7 @@ struct Solution {
     solved: bool,
     seen: HashSet<Vec<[i32; 2]>>,
     lowest_dislikes: Option<i32>,
+    candidates: Vec<((i32, i32), usize)>,
 }
 
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
@@ -237,16 +241,54 @@ pub struct PolygonApp {
 impl PolygonApp {
     fn init_solution(&mut self) {
         let problem = self.problem.as_ref().unwrap();
+        let min_x = problem.hole.iter().map(|x| x[0] as i32).min().unwrap_or(0);
+        let max_x = problem.hole.iter().map(|x| x[0] as i32).max().unwrap_or(0);
+        let min_y = problem.hole.iter().map(|x| x[1] as i32).min().unwrap_or(0);
+        let max_y = problem.hole.iter().map(|x| x[1] as i32).max().unwrap_or(0);
+        let x_range: Vec<_> = (min_x..=max_x).collect();
+        let y_range: Vec<_> = (min_y..=max_y).collect();
+        let mut positions: Vec<_> = x_range
+            .into_iter()
+            .cartesian_product(y_range.into_iter())
+            .filter_map(|(x, y)| {
+                // Filter out points outside the hole
+                let point = Point {
+                    x: x as f32,
+                    y: y as f32,
+                };
+                // Is the point inside?
+                if inside(&problem.hole, point) {
+                    Some((x, y))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        // Sort the positions on dislikes
+        positions.sort_by(|a, b| {
+            let mut posea = HashMap::new();
+            let mut poseb = HashMap::new();
+            posea.insert(0, [a.0, a.1]);
+            poseb.insert(0, [b.0, b.1]);
+            let da = calc_dislikes(&problem, &posea);
+            let db = calc_dislikes(&problem, &poseb);
+            da.cmp(&db)
+        });
+        let candidates: Vec<_> = positions
+            .into_iter()
+            .cartesian_product(0..problem.figure.vertices.len())
+            .collect();
         self.solution = Solution {
             queue: BinaryHeap::new(),
-            min_x: problem.hole.iter().map(|x| x[0] as i32).min().unwrap_or(0),
-            max_x: problem.hole.iter().map(|x| x[0] as i32).max().unwrap_or(0),
-            min_y: problem.hole.iter().map(|x| x[1] as i32).min().unwrap_or(0),
-            max_y: problem.hole.iter().map(|x| x[1] as i32).max().unwrap_or(0),
+            min_x,
+            max_x,
+            min_y,
+            max_y,
             iterations: 0,
             solved: false,
             seen: HashSet::new(),
             lowest_dislikes: None,
+            candidates,
         };
         let x = self.solution.min_x + (self.solution.max_x - self.solution.min_x) / 2;
         let y = self.solution.min_y + (self.solution.max_y - self.solution.min_y) / 2;
@@ -312,27 +354,6 @@ impl PolygonApp {
         // println!("solving: {} iterations", iterations);
         let mut iter = 0;
         let problem = self.problem.as_ref().unwrap();
-        // let mut rng = rand::thread_rng();
-        let x_range: Vec<_> = (self.solution.min_x..=self.solution.max_x).collect();
-        let y_range: Vec<_> = (self.solution.min_y..=self.solution.max_y).collect();
-        let mut positions: Vec<_> = x_range
-            .into_iter()
-            .cartesian_product(y_range.into_iter())
-            .collect();
-        // Sort the positions on dislikes
-        positions.sort_by(|a, b| {
-            let mut posea = HashMap::new();
-            let mut poseb = HashMap::new();
-            posea.insert(0, [a.0, a.1]);
-            poseb.insert(0, [b.0, b.1]);
-            let da = calc_dislikes(&problem, &posea);
-            let db = calc_dislikes(&problem, &poseb);
-            da.cmp(&db)
-        });
-        let candidates: Vec<_> = positions
-            .into_iter()
-            .cartesian_product(0..problem.figure.vertices.len())
-            .collect();
         while let Some(t) = self.solution.queue.pop() {
             let Thing {
                 num: _wanted_num,
@@ -342,7 +363,7 @@ impl PolygonApp {
                 dislikes,
                 constrainedness,
                 edge_length: _,
-            } = t;
+            } = t.clone();
             // println!("{}, {:?}", dislikes, verts);
             let num = verts.len();
             if num == problem.figure.vertices.len() {
@@ -359,34 +380,54 @@ impl PolygonApp {
                         println!("New best! {:?}, {}", verts, dislikes);
                         self.solution.lowest_dislikes = Some(dislikes);
                         self.best_pose = verts.clone();
-			self.save_best();
-			return;
+                        self.save_best();
+                        return;
                     }
                 } else {
                     println!("First solution! {:?}, {}", verts, dislikes);
                     self.solution.lowest_dislikes = Some(dislikes);
                     self.best_pose = verts.clone();
-		    self.save_best();
+                    self.save_best();
                     return;
                 }
             }
-            // let num_queued = self.solution.queue.len();
-            let ok_points: Vec<_> = candidates
-                .par_iter()
+            let cand: Vec<_> = self
+                .solution
+                .candidates
+                .iter()
                 .filter_map(|((x, y), ix)| {
-                    if *ix != constrainedness.0 {
-                        return None;
+                    if constrainedness.is_empty() {
+                        return Some(((x, y), ix));
                     }
+                    let v = constrainedness[0].1;
+                    let mut ok = false;
+                    for (cix, cv) in &constrainedness {
+                        if *cv != v {
+                            break;
+                        }
+                        if *ix == *cix {
+                            ok = true;
+                            break;
+                        }
+                    }
+                    if ok {
+                        Some(((x, y), ix))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            // If we didn't use all the nighbors, put it back in
+            if cand.len() < num {
+                self.solution.queue.push(t);
+            }
+            let ok_points: Vec<_> = cand
+                .into_par_iter()
+                .filter_map(|((x, y), ix)| {
                     let point = Point {
                         x: *x as f32,
                         y: *y as f32,
                     };
-                    // println!("verts: {:?}, point: {:?}", verts, point);
-                    // Is the point inside?
-                    if !inside(&problem.hole, point) {
-                        // println!("point not inside");
-                        return None;
-                    }
                     // Are all placed edges inside?
                     // Are all placed edges within the constraint?
                     let mut ok = true;
@@ -527,6 +568,7 @@ impl Default for PolygonApp {
                 solved: false,
                 seen: HashSet::new(),
                 lowest_dislikes: None,
+                candidates: vec![],
             },
             pose: HashMap::new(),
             selected: HashSet::new(),
@@ -604,7 +646,7 @@ impl epi::App for PolygonApp {
                 ));
                 ui.label(format!("Solved: {}", self.solution.solved));
                 if ui.button("Save").clicked() {
-		    self.save_best();
+                    self.save_best();
                 }
             });
             let mut selected = self.selected.clone();
