@@ -1,8 +1,6 @@
 use eframe::{egui, epi};
-//extern crate env_file;
 
 use itertools::Itertools;
-// use rand::prelude::*;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
@@ -131,28 +129,11 @@ struct Thing {
 
 impl Ord for Thing {
     fn cmp(&self, other: &Thing) -> Ordering {
-        if self.num == self.verts.len() {
-            other.dislikes.cmp(&self.dislikes)
-        } else {
-            // let c_factor = 10;
-            // let l_factor = 1000;
-            // let d_factor = 0;
-            // let e_factor = 0;
-            // let self_score = self.constrainedness.1 * c_factor
-            //     + self.verts.len() as i32 * l_factor
-            //     + self.edge_length * e_factor
-            //     + 100000 / (self.dislikes + 1) * d_factor;
-            // let other_score = other.constrainedness.1 * c_factor
-            //     + other.verts.len() as i32 * l_factor
-            //     + other.edge_length * e_factor
-            //     + 100000 / (other.dislikes + 1) * d_factor;
-            // self_score.cmp(&other_score)
-            self.verts
-                .len()
-                .cmp(&other.verts.len())
-                .then_with(|| self.edge_length.cmp(&other.edge_length))
-                .then_with(|| other.dislikes.cmp(&self.dislikes))
-        }
+        self.verts
+            .len()
+            .cmp(&other.verts.len())
+            .then_with(|| self.edge_length.cmp(&other.edge_length))
+            .then_with(|| other.dislikes.cmp(&self.dislikes))
     }
 }
 
@@ -493,20 +474,6 @@ impl PolygonApp {
                     self.solution.queue.push(t);
                 }
             }
-            // println!(
-            //     "queued: {} new starting points",
-            //     self.solution.queue.len() - num_queued
-            // );
-            // if num_queued == self.solution.queue.len() {
-            //     let mut points = vec![];
-            //     for i in 0..problem.figure.vertices.len() {
-            //         let vertex = problem.figure.vertices[i];
-            //         let pos = [vertex.x as i32, vertex.y as i32];
-            //         let p = verts.get(&i).unwrap_or(&pos);
-            //         points.push(*p);
-            //     }
-            //     println!("Cannot continue from {:?}", points);
-            // }
             iter += 1;
             self.solution.iterations += 1;
             if iter > iterations {
