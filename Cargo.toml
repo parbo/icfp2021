@@ -21,6 +21,7 @@ itertools = "0.10.1"
 rayon = "1.5.1"
 rand = "0.8.4"
 getrandom = { version = "0.2.3", features = ["js"] }
+clap = "2.33.3"
 
 [features]
 default = ["persistence", "http"]

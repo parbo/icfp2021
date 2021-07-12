@@ -9,6 +9,7 @@ use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::fs::File;
 use std::io::BufReader;
+use std::io::Write;
 use std::path::Path;
 
 pub type Point = egui::Pos2;
@@ -622,6 +623,32 @@ impl PolygonApp {
             println!("saved solution!");
         }
     }
+
+    fn load(&mut self) {
+        if let Ok(read_problem) = read_problem_from_file(&self.filename) {
+            let mut pose = HashMap::new();
+            for i in 0..read_problem.figure.vertices.len() {
+                let p = read_problem.figure.vertices[i];
+                pose.insert(i, [p.x as i32, p.y as i32]);
+            }
+            self.pose = pose;
+            self.best_pose = HashMap::new();
+            self.problem = Some(read_problem);
+            self.init_solution();
+            println!("Problem: {:?}", self.problem);
+        }
+    }
+
+    pub fn solve_console(&mut self, filename: &str) {
+        self.filename = filename.to_owned();
+        self.load();
+        self.solving = true;
+        while self.solving {
+            self.solve(10);
+            print!(".");
+            std::io::stdout().flush().unwrap();
+        }
+    }
 }
 
 impl Default for PolygonApp {
@@ -696,18 +723,7 @@ impl epi::App for PolygonApp {
             });
 
             if ui.button("Load").clicked() {
-                if let Ok(read_problem) = read_problem_from_file(&self.filename) {
-                    let mut pose = HashMap::new();
-                    for i in 0..read_problem.figure.vertices.len() {
-                        let p = read_problem.figure.vertices[i];
-                        pose.insert(i, [p.x as i32, p.y as i32]);
-                    }
-                    self.pose = pose;
-                    self.best_pose = HashMap::new();
-                    self.problem = Some(read_problem);
-                    self.init_solution();
-                    println!("Problem: {:?}", self.problem);
-                }
+                self.load();
             }
             ui.checkbox(&mut self.grid, "Show Grid");
             ui.checkbox(&mut self.try_keep, "Try to keep valid vertices");
