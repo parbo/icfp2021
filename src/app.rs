@@ -231,10 +231,6 @@ fn find_cycles(problem: &Problem, ix: usize, graph: Vec<usize>) -> Vec<Vec<usize
 
 struct Solution {
     queue: BinaryHeap<Thing>,
-    min_x: i32,
-    max_x: i32,
-    min_y: i32,
-    max_y: i32,
     iterations: usize,
     solved: bool,
     seen: HashSet<Vec<[i32; 2]>>,
@@ -312,10 +308,6 @@ impl PolygonApp {
             .collect();
         self.solution = Solution {
             queue: BinaryHeap::new(),
-            min_x,
-            max_x,
-            min_y,
-            max_y,
             iterations: 0,
             solved: false,
             seen: HashSet::new(),
@@ -323,8 +315,6 @@ impl PolygonApp {
             candidates,
             longest_edge_in_cycle: HashMap::new(),
         };
-        let x = self.solution.min_x + (self.solution.max_x - self.solution.min_x) / 2;
-        let y = self.solution.min_y + (self.solution.max_y - self.solution.min_y) / 2;
         // First try with keeping the vertices with no invalid edges
         if self.try_keep {
             let mut valid = HashMap::new();
@@ -666,10 +656,6 @@ impl Default for PolygonApp {
             problem: None,
             solution: Solution {
                 queue: BinaryHeap::new(),
-                min_x: 0,
-                max_x: 0,
-                min_y: 0,
-                max_y: 0,
                 iterations: 0,
                 solved: false,
                 seen: HashSet::new(),
