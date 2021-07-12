@@ -444,7 +444,7 @@ impl PolygonApp {
                 x: _orig_x,
                 y: _orig_y,
                 dislikes,
-                constrainedness,
+                constrainedness: _,
                 edge_length: _,
             } = t.clone();
             // println!("{}, {:?}", dislikes, verts);
@@ -455,51 +455,57 @@ impl PolygonApp {
                     self.solution.solved = true;
                     self.best_pose = verts.clone();
                     self.pose = verts;
-                    println!("solved!");
+                    println!("solved! {:?}", self.best_pose);
                     return;
                 }
                 if let Some(lowest) = self.solution.lowest_dislikes {
                     if dislikes < lowest {
                         println!("New best! {:?}, {}", verts, dislikes);
                         self.solution.lowest_dislikes = Some(dislikes);
-                        self.best_pose = verts.clone();
+                        self.best_pose = verts;
                         self.save_best();
                         return;
                     }
                 } else {
                     println!("First solution! {:?}, {}", verts, dislikes);
                     self.solution.lowest_dislikes = Some(dislikes);
-                    self.best_pose = verts.clone();
+                    self.best_pose = verts;
                     self.save_best();
                     return;
                 }
             }
+            let max_el = self
+                .solution
+                .longest_edge_in_cycle
+                .iter()
+                .filter_map(|(ix, el)| {
+                    if verts.contains_key(ix) {
+                        None
+                    } else {
+                        Some(el)
+                    }
+                })
+                .max()
+                .unwrap_or(&0);
+            //	    println!("max el: {}", max_el);
             let cand: Vec<_> = self
                 .solution
                 .candidates
                 .iter()
                 .filter_map(|((x, y), ix)| {
-                    if constrainedness.is_empty() {
-                        return Some(((x, y), ix));
-                    }
-                    let v = constrainedness[0].1;
-                    let mut ok = false;
-                    for (cix, cv) in &constrainedness {
-                        if *cv != v {
-                            break;
+                    if let Some(le) = self.solution.longest_edge_in_cycle.get(&ix) {
+                        //			println!("le for {} is {}", ix, le);
+                        if le == max_el {
+                            Some(((x, y), ix))
+                        } else {
+                            None
                         }
-                        if *ix == *cix {
-                            ok = true;
-                            break;
-                        }
-                    }
-                    if ok {
-                        Some(((x, y), ix))
                     } else {
-                        None
+                        Some(((x, y), ix))
                     }
                 })
                 .collect();
+            //	    println!("cand: {:?}", cand);
             // If we didn't use all the nighbors, put it back in
             if cand.len() < num {
                 self.solution.queue.push(t);
@@ -610,6 +616,7 @@ impl PolygonApp {
                 return;
             }
         }
+        println!("no more in queue");
         self.solving = false;
     }
 
